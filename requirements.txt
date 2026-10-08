@@ -23,6 +23,9 @@ groq==0.14.0
 langgraph==0.2.60
 langchain-core==0.3.29
 
+# --- MCP (mock flight-delay server: server + client session) ---
+mcp>=1.0,<3
+
 # --- ML / embeddings / sentiment (self-hosted, CPU) ---
 sentence-transformers==3.3.1
 # CPU-only wheels from the PyPI-mirrored pytorch index (avoids CUDA deps)

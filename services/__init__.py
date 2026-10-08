@@ -1,0 +1,1 @@
+"""Shared flight-delay package (MCP server + in-process graph lookup)."""

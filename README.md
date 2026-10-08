@@ -46,6 +46,9 @@ Passenger query → **sentiment + intent** analysis → **Router agent** →
 - routine → retrieve relevant chunks from pgvector → **Q&A agent** generates a grounded, streaming answer; or
 - escalate → conversation summary routed to the **human-agent dashboard**.
 
+Flight-status questions are detected deterministically and enriched with live
+(mock) data from the MCP flight-delay service before answering.
+
 Escalation triggers: sentiment < -0.75 on 2 consecutive turns, a high-risk
 intent (compensation/safety/emergency), or more than 3 unresolved turns.
 
@@ -58,7 +61,9 @@ history, so no context leaks between sessions.
 ```
 app/            FastAPI backend (routes, models, auth, agents)
 ingest/         Document ingestion + refresh (PDFs, KQ FAQ scrape)
+services/       Mock flight-delay library + standalone MCP server
 frontend/       React app (chat widget + agent dashboard)
+tests/          Live integration/smoke harnesses (e2e WS, MCP flights)
 data_sources/   Local documents fed to the vector store
 ```
 
@@ -78,6 +83,41 @@ re-chunked/re-embedded; unchanged sources are left untouched.
 `DATABASE_URL` is set and reachable, otherwise falls back to a local `SqliteStore`
 for offline/restricted-network development. Vectors are stored SQLite-side as
 JSON; in-process cosine search is used during retrieval for the fallback.
+
+## Mock flight delays (MCP server)
+
+There is no real KQ flight data in this prototype, so flight-status questions
+are answered from a simulated schedule (`services/flight_delays.py`): a small
+SQLite table of invented routes and times, with delays rolled from a
+date-seeded RNG. Results are **stable for a whole calendar day** and regenerate
+the next day.
+
+The same functions are exposed as a standalone **MCP server** so any MCP client
+(Claude Desktop, IDEs, scripting) can use them:
+
+```bash
+.venv/bin/python -m services.flights_mcp     # stdio transport by default
+```
+
+Tools: `get_flight_status(flight_no, date?)` and
+`list_delays(route?, date?, min_delay?)`. Example Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "hermes-flights": {
+      "command": "/path/to/hermes/.venv/bin/python",
+      "args": ["-m", "services.flights_mcp"],
+      "cwd": "/path/to/hermes"
+    }
+  }
+}
+```
+
+The QA pipeline calls the same underlying functions in-process (`flight_lookup`
+graph node), so the bot and every MCP client see identical answers. Smoke test:
+`.venv/bin/python tests/mcp_flights_smoke.py` (drives the server through a real
+MCP client session, checks determinism and in-process/MCP consistency).
 
 ## Cost notes
 

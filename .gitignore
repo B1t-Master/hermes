@@ -30,6 +30,7 @@ Thumbs.db
 # Local data
 data_sources/*.tmp
 .hermes_store.sqlite
+.flights.sqlite
 session-*.md
 
 # Capstone document (project reference only, not part of the codebase)

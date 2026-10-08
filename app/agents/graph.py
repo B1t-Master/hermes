@@ -4,7 +4,7 @@ Flow:
 
     analyse_sentiment -> classify -> route
         route --(escalate)--> handle_escalation --> END
-        route --(routine)--> retrieve --> generate_answer --> END
+        route --(routine)--> retrieve --> flight_lookup --> generate_answer --> END
 
 Escalation triggers (in `route`):
   - intent in {safety, compensation, human_request} (keyword safety hits
@@ -25,6 +25,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from app.agents.flights import detect_flight_request, get_flight_lookup
 from app.agents.intent import classify_intent
 from app.agents.llm import LLMError, get_llm
 from app.agents.retriever import get_retriever
@@ -71,6 +72,7 @@ class AgentState(TypedDict, total=False):
     escalate: bool
     escalation_reason: str
     chunks: list[dict]  # RetrievedChunk as plain dicts
+    flight_context: str  # rendered mock flight status/delays, when relevant
     answer: str
 
 
@@ -186,10 +188,47 @@ def _format_context(chunks: list[dict]) -> tuple[str, str]:
     return "\n\n".join(parts), ", ".join(dict.fromkeys(titles)) or "none"
 
 
+async def flight_lookup(state: AgentState) -> dict:
+    """Fetch mock flight status/delays when the query asks about a flight.
+
+    Detection is deterministic (`detect_flight_request`), so the node only
+    runs pipeline work on genuine flight questions; everything else returns
+    an empty update and the graph continues unchanged. Failures degrade to
+    "no flight context" rather than failing the turn.
+    """
+    request = detect_flight_request(state.get("query", ""))
+    if request is None:
+        return {}
+    lookup = get_flight_lookup()
+    try:
+        if request["type"] == "status":
+            info = await lookup.status(request["flight_no"])
+            context = lookup.render_status(info)
+        else:
+            rows = await lookup.delays(request.get("route"))
+            context = lookup.render_delays(rows)
+            if not context:
+                context = (
+                    f"No flights on {request.get('route') or 'those routes'} "
+                    "are delayed right now."
+                )
+    except Exception:
+        logger.exception("Flight lookup failed; continuing without flight context")
+        return {}
+    return {"flight_context": context}
+
+
 async def answer(state: AgentState, config=None) -> dict:
     context, sources = _format_context(state.get("chunks", []))
+    system = QA_SYSTEM_PROMPT.format(context=context or "(no context)", sources=sources)
+    flight_context = state.get("flight_context")
+    if flight_context:
+        system += (
+            "\n\nLive flight information from the flight service (mock data):\n"
+            + flight_context
+        )
     messages = [
-        {"role": "system", "content": QA_SYSTEM_PROMPT.format(context=context or "(no context)", sources=sources)},
+        {"role": "system", "content": system},
         *state.get("history", [])[-HISTORY_TURNS_FOR_CONTEXT:],
         {"role": "user", "content": state.get("query", "")},
     ]
@@ -294,6 +333,7 @@ def build_graph():
     graph.add_node("classify", classify)
     graph.add_node("route", route)
     graph.add_node("retrieve", retrieve)
+    graph.add_node("flight_lookup", flight_lookup)
     graph.add_node("generate_answer", answer)
     graph.add_node("handle_escalation", escalate)
 
@@ -305,7 +345,8 @@ def build_graph():
         _should_escalate,
         {"escalate": "handle_escalation", "retrieve": "retrieve"},
     )
-    graph.add_edge("retrieve", "generate_answer")
+    graph.add_edge("retrieve", "flight_lookup")
+    graph.add_edge("flight_lookup", "generate_answer")
     graph.add_edge("generate_answer", END)
     graph.add_edge("handle_escalation", END)
     return graph.compile()

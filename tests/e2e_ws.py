@@ -23,7 +23,7 @@ from websockets.asyncio.client import connect
 
 # Repo root on sys.path so `app.*` imports work from anywhere.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.config import settings  # noqa: E402  (loads .env)
+from app.config import settings
 
 BASE = os.environ.get("E2E_BASE", "http://localhost:8000")
 WS = os.environ.get("E2E_WS", "ws://localhost:8000")
@@ -114,6 +114,26 @@ async def main() -> None:
                 bool(body.get("bot_message", {}).get("sources")),
                 str(body.get("bot_message", {}).get("sources"))[:120],
             )
+
+        # ---- mock flight status through the graph ---------------------------
+        r = await c.post(
+            f"{BASE}/chat/conversations/{conv_id}/messages",
+            headers=ph,
+            json={
+                "conversation_id": conv_id,
+                "content": "Is KQ720 delayed today?",
+            },
+        )
+        if r.status_code == 200:
+            flight_body = r.json()
+            flight_bot = flight_body.get("bot_message") or {}
+            check(
+                "flight turn answers with the flight number",
+                "KQ720" in flight_bot.get("content", ""),
+                (flight_bot.get("content") or "")[:120],
+            )
+        else:
+            check("flight turn answers with the flight number", False, r.text[:120])
 
         # ---- bad-token WS rejection -----------------------------------------
         check(
