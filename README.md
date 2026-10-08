@@ -1,4 +1,4 @@
-# Zuri — Agentic RAG Support Bot (Kenya Airways prototype)
+# hermes: Agentic RAG Support Bot (Kenya Airways prototype)
 
 A RAG-based passenger Q&A assistant with sentiment routing and human escalation.
 FastAPI backend, React frontend, LangGraph orchestration. All three inference
@@ -10,9 +10,10 @@ Groq/DeepSeek.
 - **Backend:** FastAPI, LangGraph, SQLAlchemy (async) + PostgreSQL/**pgvector** on Neon
 - **Inference:** `sentence-transformers` (`bge-small-en-v1.5`, CPU) · sentiment
   `twitter-roberta-base-sentiment-latest` (CPU)
-- **LLM:** Groq `Llama 3.1 8B Instant` (primary) / DeepSeek `V4 Flash` (fallback) via OpenAI-compatible API
-- **Auth:** JWT (`PyJWT` + `bcrypt`) — passengers (email+password or anonymous session) and agents (shared credentials)
-- **Frontend:** React (Vite) — passenger chat widget + human-agent dashboard
+- **LLM:** Groq `openai/gpt-oss-120b` (primary) / `openai/gpt-oss-20b` (fallback)
+  via OpenAI-compatible API; DeepSeek configured as an emergency backup
+- **Auth:** JWT (`PyJWT` + `bcrypt`): passengers (email+password or anonymous session) and agents (shared credentials)
+- **Frontend:** React (Vite): passenger chat widget + human-agent dashboard
 
 ## Quick start
 
@@ -24,7 +25,7 @@ Groq/DeepSeek.
    uvicorn app.main:app --reload
    ```
 3. Ingest data (PDFs in `data_sources/` + KQ FAQ URLs). By default the CLI writes
-   to a local `SqliteStore` (`.zuri_store.sqlite`) so the pipeline runs without
+   to a local `SqliteStore` (`.hermes_store.sqlite`) so the pipeline runs without
    the ML stack or a network route to Neon:
    ```bash
    python -m ingest.run                      # local sqlite, no embeddings
@@ -70,7 +71,7 @@ KQ FAQ web pages. When a source changes, re-run:
 python -m ingest.refresh        # same --store / --embed switches as ingest.run
 ```
 
-Refresh uses content hashing — only chunks whose source changed are
+Refresh uses content hashing: only chunks whose source changed are
 re-chunked/re-embedded; unchanged sources are left untouched.
 
 **Store backends:** `--store auto` picks the Neon Postgres/pgvector store when
@@ -81,13 +82,13 @@ JSON; in-process cosine search is used during retrieval for the fallback.
 ## Cost notes
 
 - Embeddings + sentiment run on CPU inside the backend (free).
-- Retain the managed LLM API route — self-hosting a GPU only breaks even
+- Retain the managed LLM API route; self-hosting a GPU only breaks even
   around ~12M output tokens/month, far above prototype volume.
 - pgvector replaces a dedicated vector DB (e.g. Pinecone) for free at this scale.
 
 ## Future plans
 
-- **WhatsApp integration via Turn.io** — same FastAPI backend gets a webhook
+- **WhatsApp integration via Turn.io**: same FastAPI backend gets a webhook
   adapter routing WhatsApp messages through the identical LangGraph pipeline;
   the agent dashboard then also serves Turn.io helpdesk handoffs.
 - Scheduled re-ingestion / stale-data automation (currently manual refresh).

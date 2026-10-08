@@ -29,7 +29,7 @@ Thumbs.db
 
 # Local data
 data_sources/*.tmp
-.zuri_store.sqlite
+.hermes_store.sqlite
 session-*.md
 
 # Capstone document (project reference only, not part of the codebase)
