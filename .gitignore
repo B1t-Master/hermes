@@ -31,6 +31,7 @@ Thumbs.db
 data_sources/*.tmp
 .hermes_store.sqlite
 .flights.sqlite
+.demo.sqlite
 session-*.md
 
 # Capstone document (project reference only, not part of the codebase)

@@ -32,6 +32,12 @@ const READ_TIMEOUT_MS = 70_000;
 const WATCHDOG_MS = 15_000;
 const MAX_QUEUED = 50;
 
+/* Close codes the server uses for terminal conditions (app/api/ws.py):
+ * 4401 unauthenticated, 4403 forbidden (claim released / not your
+ * conversation), 4410 conversation closed. Reconnecting into any of these
+ * would loop forever, so they are treated as fatal. */
+const FATAL_CLOSE_CODES = new Set([4401, 4403, 4410]);
+
 export function connectWs(path: string, token: string, handlers: WsHandlers): WsHandle {
   const url = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${path}` +
     `?token=${encodeURIComponent(token)}`;
@@ -114,13 +120,18 @@ export function connectWs(path: string, token: string, handlers: WsHandlers): Ws
       handlers.onFrame(data);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       if (pingTimer !== null) window.clearInterval(pingTimer);
       if (watchdogTimer !== null) window.clearInterval(watchdogTimer);
       pingTimer = null;
       watchdogTimer = null;
       ws = null;
-      if (stopped) {
+      // Fatal codes (or an explicit close()) mean "do not come back"; only
+      // transient failures (network blips, server restarts) should retry.
+      if (stopped || FATAL_CLOSE_CODES.has(ev.code)) {
+        stopped = true;
+        clearTimers();
+        queue.length = 0;
         handlers.onStatus?.("closed");
         return;
       }

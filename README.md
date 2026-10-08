@@ -64,6 +64,7 @@ ingest/         Document ingestion + refresh (PDFs, KQ FAQ scrape)
 services/       Mock flight-delay library + standalone MCP server
 frontend/       React app (chat widget + agent dashboard)
 tests/          Live integration/smoke harnesses (e2e WS, MCP flights)
+scripts/        One-off tooling (e.g. seed the local sqlite store)
 data_sources/   Local documents fed to the vector store
 ```
 
@@ -83,6 +84,27 @@ re-chunked/re-embedded; unchanged sources are left untouched.
 `DATABASE_URL` is set and reachable, otherwise falls back to a local `SqliteStore`
 for offline/restricted-network development. Vectors are stored SQLite-side as
 JSON; in-process cosine search is used during retrieval for the fallback.
+
+You can force the backend for **serving** too with `INGEST_STORE=sqlite|pg|auto`
+(the web app reads the same env var). In sandboxes where the Neon endpoint has
+seconds of round-trip latency, seeding the local store and serving from it
+keeps turns responsive:
+
+```bash
+.venv/bin/python scripts/seed_sqlite_store.py   # copy pg corpus -> .hermes_store.sqlite
+INGEST_STORE=sqlite uvicorn app.main:app        # serve retrieval from SQLite
+```
+
+`Scripts/seed_sqlite_store.py` copies the existing pgvector corpus (chunks +
+embeddings, byte-identical) into the local store, so no re-scraping or
+re-embedding is needed.
+
+**App database:** conversation/message/agent rows use Postgres by default. The
+same models also run on a local SQLite backend (`DATABASE_URL=sqlite+aiosqlite:///./.demo.sqlite`);
+schema is created automatically at startup on either backend. UUIDs, enums and
+JSON columns are portable, so sandboxes where the Neon endpoint has seconds of
+round-trip latency can serve the whole demo from disk (the DB pool is also
+warmed at startup, so the first turn does not pay a cold connect).
 
 ## Mock flight delays (MCP server)
 

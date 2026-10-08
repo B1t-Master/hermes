@@ -3,11 +3,36 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Uuid,
+    func,
+)
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.config import settings
 from app.db import Base
+
+
+def _uuid_type():
+    """Postgres backend: native UUID column. SQLite demo backend: the generic
+    SQLAlchemy Uuid (stored as CHAR(32)), so the same models work locally."""
+    return Uuid(as_uuid=True) if settings.is_sqlite_backend else PG_UUID(as_uuid=True)
+
+
+def _vector_type():
+    """Postgres backend: pgvector column. SQLite demo backend: embeddings live
+    in the separate local SqliteStore, so the app-side column is a JSON list."""
+    return Vector(384) if not settings.is_sqlite_backend else JSON
 
 
 class ConversationStatus(str, enum.Enum):
@@ -41,7 +66,7 @@ def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
 class Passenger(Base):
     __tablename__ = "passengers"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(_uuid_type(), primary_key=True, default=uuid.uuid4)
     first_name: Mapped[str] = mapped_column(String(120))
     last_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
@@ -55,7 +80,7 @@ class Passenger(Base):
 class Agent(Base):
     __tablename__ = "agents"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(_uuid_type(), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(255), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
@@ -67,12 +92,12 @@ class Agent(Base):
 class Conversation(Base):
     __tablename__ = "conversations"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(_uuid_type(), primary_key=True, default=uuid.uuid4)
     passenger_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("passengers.id", ondelete="CASCADE"), index=True
+        _uuid_type(), ForeignKey("passengers.id", ondelete="CASCADE"), index=True
     )
     agent_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True
+        _uuid_type(), ForeignKey("agents.id"), nullable=True
     )
     status: Mapped[ConversationStatus] = mapped_column(
         Enum(ConversationStatus, name="conversation_status", values_callable=_enum_values),
@@ -93,9 +118,9 @@ class Conversation(Base):
 class Message(Base):
     __tablename__ = "messages"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(_uuid_type(), primary_key=True, default=uuid.uuid4)
     conversation_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+        _uuid_type(), ForeignKey("conversations.id", ondelete="CASCADE"), index=True
     )
     sender: Mapped[MessageSender] = mapped_column(
         Enum(MessageSender, name="message_sender", values_callable=_enum_values)
@@ -113,11 +138,11 @@ class Message(Base):
 class Escalation(Base):
     __tablename__ = "escalations"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(_uuid_type(), primary_key=True, default=uuid.uuid4)
     conversation_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+        _uuid_type(), ForeignKey("conversations.id", ondelete="CASCADE"), index=True
     )
-    agent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True)
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(_uuid_type(), ForeignKey("agents.id"), nullable=True)
     reason: Mapped[str] = mapped_column(String(64))
     summary: Mapped[str] = mapped_column(Text)
     status: Mapped[EscalationStatus] = mapped_column(
@@ -133,7 +158,7 @@ class Escalation(Base):
 class KnowledgeDocument(Base):
     __tablename__ = "knowledge_documents"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(_uuid_type(), primary_key=True, default=uuid.uuid4)
     source_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     title: Mapped[str] = mapped_column(String(512))
     doc_type: Mapped[str] = mapped_column(String(32))  # pdf | docx | html
@@ -149,13 +174,13 @@ class KnowledgeDocument(Base):
 class KnowledgeFragment(Base):
     __tablename__ = "knowledge_fragments"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(_uuid_type(), primary_key=True, default=uuid.uuid4)
     document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("knowledge_documents.id", ondelete="CASCADE"), index=True
+        _uuid_type(), ForeignKey("knowledge_documents.id", ondelete="CASCADE"), index=True
     )
     chunk_index: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)  # None when ML stack not installed; 384 = bge-small-en-v1.5
+    embedding: Mapped[list[float] | None] = mapped_column(_vector_type(), nullable=True)  # None when ML stack not installed; 384 = bge-small-en-v1.5
     source_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     topic: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_fetched: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -166,9 +191,9 @@ class KnowledgeFragment(Base):
 class PerformanceMetric(Base):
     __tablename__ = "performance_metrics"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(_uuid_type(), primary_key=True, default=uuid.uuid4)
     conversation_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+        _uuid_type(), ForeignKey("conversations.id", ondelete="CASCADE"), index=True
     )
     metric: Mapped[str] = mapped_column(String(32))  # response_time_ms | csat | aht_s
     value: Mapped[float] = mapped_column(Float)

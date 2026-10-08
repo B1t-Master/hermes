@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "./api";
 import { useAuth } from "./auth";
+import RichText from "./RichText";
+import { formatTime } from "./format";
 import type { Conversation, Message, ServerFrame } from "./types";
 import { connectWs } from "./ws";
 import type { WsHandle, WsStatus } from "./ws";
-
-const timeFmt = new Intl.DateTimeFormat([], { hour: "2-digit", minute: "2-digit" });
 
 export default function ChatWidget() {
   const { token, role, logout } = useAuth();
@@ -22,6 +22,8 @@ export default function ChatWidget() {
   const wsRef = useRef<WsHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const agentTypingTimer = useRef<number | null>(null);
+  /** Current conversation id, read by stale-socket frame handlers. */
+  const activeIdRef = useRef<string | null>(null);
 
   /* ---- initial load: resume the newest open conversation or create one ---- */
   useEffect(() => {
@@ -53,6 +55,7 @@ export default function ChatWidget() {
   useEffect(() => {
     if (!token || !activeId) return;
     const cid = activeId;
+    activeIdRef.current = cid;
     setMessages([]);
     setStreaming(null);
     setBotThinking(false);
@@ -62,6 +65,11 @@ export default function ChatWidget() {
     api.listMessages(token, cid).then(setMessages).catch(() => {
       /* resync on reconnect covers transient failures */
     });
+
+    const refreshConversations = () => {
+      if (!token) return;
+      api.listConversations(token).then(setConversations).catch(() => undefined);
+    };
 
     const flagAgentTyping = () => {
       setAgentTyping(true);
@@ -84,12 +92,17 @@ export default function ChatWidget() {
       });
     };
 
+    // Sidebar status/order syncs from the DB (turn counts included); the
+    // local bounce gives instant feedback while the fetch is in flight.
     const setConvStatus = (id: string, status: Conversation["status"]) =>
       setConversations((list) =>
-        list.map((c) => (c.id === id ? { ...c, status, turn_count: c.turn_count + 1 } : c)),
+        list.map((c) => (c.id === id ? { ...c, status } : c)),
       );
 
     const onFrame = (f: ServerFrame) => {
+      // Frames from a socket that was torn down after switching chats must
+      // not leak into the newly active conversation.
+      if (activeIdRef.current !== cid) return;
       switch (f.type) {
         case "typing":
           if (f.sender === "bot") setBotThinking(true);
@@ -103,6 +116,7 @@ export default function ChatWidget() {
           setBotThinking(false);
           setStreaming(null);
           if (f.message) upsert(f.message);
+          refreshConversations();
           break;
         case "bot_error":
           setBotThinking(false);
@@ -111,6 +125,7 @@ export default function ChatWidget() {
           break;
         case "passenger_message":
           upsert(f.message);
+          refreshConversations();
           break;
         case "bot_message":
           setBotThinking(false);
@@ -123,9 +138,11 @@ export default function ChatWidget() {
           break;
         case "escalated":
           setConvStatus(cid, "escalated");
+          refreshConversations();
           break;
         case "resolved":
           setConvStatus(cid, "resolved");
+          refreshConversations();
           break;
         case "error":
           setError(f.detail);
@@ -136,11 +153,20 @@ export default function ChatWidget() {
     };
 
     const handle = connectWs(`/ws/conversations/${cid}`, token, {
-      onStatus: setStatus,
+      onStatus: (s) => {
+        setStatus(s);
+        // A stalled/closed socket must not leave ghost "thinking" or a
+        // half-built stream on screen.
+        if (s === "reconnecting" || s === "closed") {
+          setStreaming(null);
+          setBotThinking(false);
+        }
+      },
       onOpen: () => {
         // After every (re)connect, resync from REST: the server does not
         // replay frames missed while disconnected.
         api.listMessages(token, cid).then(setMessages).catch(() => undefined);
+        refreshConversations();
       },
       onFrame,
     });
@@ -245,14 +271,16 @@ export default function ChatWidget() {
               >
                 <div className="meta">
                   <strong>{m.sender === "bot" ? "hermes" : m.sender}</strong>
-                  <span>{timeFmt.format(new Date(m.created_at))}</span>
+                  <span>{formatTime(m.created_at)}</span>
                   {m.sentiment_label && m.sender === "passenger" && (
                     <span className={`badge ${m.sentiment_label}`}>
                       {m.sentiment_label}
                     </span>
                   )}
                 </div>
-                <p>{m.content}</p>
+                <div className="body">
+                  <RichText text={m.content} />
+                </div>
                 {m.sources && m.sources.length > 0 && (
                   <div className="sources">
                     {m.sources.map((s, i) => (
@@ -275,10 +303,10 @@ export default function ChatWidget() {
                 <div className="meta">
                   <strong>hermes</strong>
                 </div>
-                <p>
-                  {streaming}
+                <div className="body streaming">
+                  <RichText text={streaming} />
                   <span className="caret">▌</span>
-                </p>
+                </div>
               </div>
             )}
             {botThinking && streaming === null && (

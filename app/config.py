@@ -34,5 +34,16 @@ class Settings(BaseSettings):
     def is_llm_configured(self) -> bool:
         return bool(self.groq_api_key or self.deepseek_api_key)
 
+    @property
+    def is_sqlite_backend(self) -> bool:
+        """True when DATABASE_URL points at a local SQLite file.
+
+        The app defaults to Postgres/Neon in production. A SQLite backend is
+        supported so the whole app can run fully local in sandboxes where the
+        Neon endpoint has multi-second round-trip latency (models already
+        support it: UUID/enum/JSON columns all port cleanly).
+        """
+        return self.database_url.startswith("sqlite")
+
 
 settings = Settings()

@@ -12,7 +12,7 @@ history. The tradeoff: a crash mid-graph loses that one inbound message.
 import logging
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.agents.graph import get_graph
 from app.db import SessionLocal
@@ -23,8 +23,6 @@ logger = logging.getLogger(__name__)
 HISTORY_LIMIT = 10
 
 _ROLE = {MessageSender.PASSENGER.value: "user", MessageSender.BOT.value: "assistant", MessageSender.AGENT.value: "assistant"}
-
-
 def message_to_dict(message: Message) -> dict:
     return {
         "id": str(message.id),
@@ -36,8 +34,6 @@ def message_to_dict(message: Message) -> dict:
         "sources": message.sources or [],
         "created_at": message.created_at.isoformat() if message.created_at else None,
     }
-
-
 def citations_from_chunks(chunks: list) -> list[dict]:
     """Deduplicated [{title, url}] pairs from the graph's retrieved chunks.
 
@@ -59,8 +55,6 @@ def citations_from_chunks(chunks: list) -> list[dict]:
             citation["score"] = round(score, 4)
         citations.append(citation)
     return citations
-
-
 async def load_history(conversation_id: uuid.UUID, limit: int = HISTORY_LIMIT) -> list[dict]:
     """Prior turns as chat messages, oldest first."""
     async with SessionLocal() as db:
@@ -74,15 +68,11 @@ async def load_history(conversation_id: uuid.UUID, limit: int = HISTORY_LIMIT) -
         ).scalars().all()
     rows = list(reversed(rows))
     return [{"role": _ROLE.get(m.sender.value, "assistant"), "content": m.content} for m in rows]
-
-
 async def get_conversation(conversation_id: uuid.UUID) -> Conversation | None:
     async with SessionLocal() as db:
         return (
             await db.execute(select(Conversation).where(Conversation.id == conversation_id))
         ).scalar_one_or_none()
-
-
 async def run_turn(
     conversation_id: uuid.UUID,
     query: str,
@@ -125,6 +115,10 @@ async def run_turn(
         "passenger_id": str(conversation.passenger_id),
         "query": query,
         "history": history,
+        # Pre-loaded conversation facts, so the graph's history triggers do
+        # not need to re-fetch the row (one fewer DB round trip per turn).
+        "conversation_status": conversation.status.value,
+        "conversation_turn_count": conversation.turn_count,
     }
     config = {"configurable": {"on_token": on_token}} if on_token is not None else None
     result = await get_graph().ainvoke(state, config=config)
@@ -151,10 +145,12 @@ async def run_turn(
                 sources=citations_from_chunks(result.get("chunks") or []),
             )
             db.add(bot_message)
-        conversation = (
-            await db.execute(select(Conversation).where(Conversation.id == conversation_id))
-        ).scalar_one()
-        conversation.turn_count += 1
+        # Increment the counter in-place; avoids a select-then-update.
+        await db.execute(
+            update(Conversation)
+            .where(Conversation.id == conversation_id)
+            .values(turn_count=Conversation.turn_count + 1)
+        )
         await db.commit()
         await db.refresh(passenger_message)
         if bot_message is not None:

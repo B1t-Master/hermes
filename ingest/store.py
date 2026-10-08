@@ -378,9 +378,7 @@ async def resolve_store(store_type: str | None = None) -> Store:
     if store_type is None:
         store_type = os.environ.get("INGEST_STORE", "auto")
 
-    has_database_url = settings.database_url and not settings.database_url.startswith(
-        "postgresql+asyncpg://localhost"
-    )
+    has_database_url = settings.database_url and settings.database_url.startswith("postgresql+asyncpg")
     if store_type == "pg" or (store_type == "auto" and has_database_url):
         return PgVectorStore()
 

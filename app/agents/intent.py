@@ -51,6 +51,10 @@ Pick exactly ONE intent for the user message:
 - complaint: negative feedback about service, staff, or experience
 - human_request: asks to speak to a person
 
+**VERY IMPORTANT:**
+- Short greetings ("hi", "hello", "hey", "good morning", "good afternoon", "good evening", "how are you") are **routine** (polite chat), NOT human_request.
+- If the user explicitly asks "speak to a human/agent", choose **human_request**.
+
 Reply with ONLY the intent word, nothing else.
 
 User message: {query}

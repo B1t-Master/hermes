@@ -22,17 +22,22 @@ async def get_db():
 
 
 async def init_models() -> None:
-    """Create schema / tables against Postgres (used by `ingest/run.py --store pg`).
+    """Create schema / tables.
 
-    Runs 'CREATE EXTENSION IF NOT EXISTS vector;' automatically so a manual
-    Neon step is not required. Remote-only: the local SqliteStore stand-in
-    builds its own schema.
+    Postgres (default): runs 'CREATE EXTENSION IF NOT EXISTS vector;'
+    automatically so a manual Neon step is not required, plus guards for
+    schema drift on tables that predate the current model set.
+    SQLite demo backend: plain create_all (the local SqliteStore builds its
+    own retrieval schema separately).
     """
     import app.models  # noqa: F401  (register models on Base)
 
     async with engine.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        if not settings.is_sqlite_backend:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+        if settings.is_sqlite_backend:
+            return
         # Schema drift guard: tables created before Phase 2 (or hand-made in the
         # Neon SQL editor) made knowledge_fragments.embedding NOT NULL. Embeddings
         # are optional until the ML stack is installed, so drop the constraint.

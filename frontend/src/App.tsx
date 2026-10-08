@@ -48,12 +48,15 @@ function AuthGate() {
     <main className="auth">
       <h1>hermes</h1>
       <p className="tagline">Kenya Airways passenger support</p>
-      <form onSubmit={submit}>
+      <form onSubmit={submit} noValidate={false}>
         {mode === "register" && (
           <input
             placeholder="First name"
             value={form.first_name}
             onChange={set("first_name")}
+            required
+            minLength={1}
+            autoComplete="given-name"
           />
         )}
         {mode === "agent" ? (
@@ -61,6 +64,7 @@ function AuthGate() {
             placeholder="Agent username"
             value={form.username}
             onChange={set("username")}
+            required
             autoComplete="username"
           />
         ) : (
@@ -69,6 +73,7 @@ function AuthGate() {
             placeholder="Email"
             value={form.email}
             onChange={set("email")}
+            required
             autoComplete="email"
           />
         )}
@@ -77,7 +82,9 @@ function AuthGate() {
           placeholder="Password"
           value={form.password}
           onChange={set("password")}
-          autoComplete={mode === "agent" ? "current-password" : "current-password"}
+          required
+          minLength={6}
+          autoComplete={mode === "agent" ? "current-password" : mode === "register" ? "new-password" : "current-password"}
         />
         {error && <p className="error">{error}</p>}
         <button type="submit" disabled={busy}>

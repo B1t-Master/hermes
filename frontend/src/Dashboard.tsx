@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "./api";
 import { useAuth } from "./auth";
+import RichText from "./RichText";
+import { formatTime } from "./format";
 import type { AgentInfo, Message, QueueEscalation, ServerFrame } from "./types";
 import { connectWs } from "./ws";
 import type { WsHandle, WsStatus } from "./ws";
 
 type Filter = "active" | "pending" | "assigned" | "resolved" | "all";
 const FILTERS: Filter[] = ["active", "pending", "assigned", "resolved", "all"];
-const timeFmt = new Intl.DateTimeFormat([], { hour: "2-digit", minute: "2-digit" });
 
 function age(iso: string): string {
   const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
@@ -122,6 +123,8 @@ export default function Dashboard() {
           case "bot_message":
           case "agent_message":
             upsert(f.message);
+            // Keep the queue card's preview/turn count in sync while viewing.
+            if (f.type === "passenger_message") void reloadRef.current();
             break;
           case "bot_done":
             if (f.message) upsert(f.message);
@@ -158,13 +161,18 @@ export default function Dashboard() {
     try {
       await api.claim(token, item.id);
       // Reflect the claim immediately (the queue filter may hide the card),
-      // then reload so the visible list syncs too.
-      setSelected({
-        ...item,
-        status: "assigned",
-        agent_id: me?.id ?? null,
-        agent_name: me?.name ?? null,
-      });
+      // then reload so the visible list syncs too. agent_id comes from `me`
+      // so the panel is "mine" even when the card drops out of the filter.
+      setSelected((prev) =>
+        prev && prev.id === item.id
+          ? {
+              ...prev,
+              status: "assigned",
+              agent_id: me?.id ?? prev.agent_id,
+              agent_name: me?.name ?? prev.agent_name,
+            }
+          : prev,
+      );
       await reload();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -184,6 +192,14 @@ export default function Dashboard() {
     setError(null);
     try {
       await api.release(token, item.id);
+      // Keep the panel honest: we no longer own it, so drop the claim from
+      // the selected copy before reloading (this also closes the conv WS,
+      // which the server would otherwise reject on the next frame/reconnect).
+      setSelected((prev) =>
+        prev && prev.id === item.id
+          ? { ...prev, status: "pending", agent_id: null, agent_name: null }
+          : prev,
+      );
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -335,9 +351,11 @@ export default function Dashboard() {
               <div key={m.id} className={`message ${m.sender}${m.pending ? " pending" : ""}`}>
                 <div className="meta">
                   <strong>{m.sender === "bot" ? "hermes" : m.sender}</strong>
-                  <span>{timeFmt.format(new Date(m.created_at))}</span>
+                  <span>{formatTime(m.created_at)}</span>
                 </div>
-                <p>{m.content}</p>
+                <div className="body">
+                  <RichText text={m.content} />
+                </div>
               </div>
             ))}
           </div>

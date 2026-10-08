@@ -65,6 +65,8 @@ class AgentState(TypedDict, total=False):
     passenger_id: str
     query: str
     history: list[dict]  # [{role, content}, ...] most recent last
+    conversation_status: str  # pre-loaded by run_turn (avoids a re-fetch)
+    conversation_turn_count: int
     sentiment_score: float
     sentiment_label: str
     intent: str
@@ -120,20 +122,19 @@ async def _history_triggers(state: AgentState) -> str:
     from sqlalchemy import select
 
     from app.db import SessionLocal
-    from app.models import Conversation, ConversationStatus, Message, MessageSender
+    from app.models import ConversationStatus, Message, MessageSender
 
     try:
         conv_uuid = uuid.UUID(str(conversation_id))
     except ValueError:
         return ""
 
-    async with SessionLocal() as db:
-        conversation = (
-            await db.execute(select(Conversation).where(Conversation.id == conv_uuid))
-        ).scalar_one_or_none()
-        if conversation is None or conversation.status == ConversationStatus.RESOLVED:
-            return ""
+    # The conversation row was already loaded by run_turn and passed in
+    # state; only the message history needs to be queried here.
+    if state.get("conversation_status") == ConversationStatus.RESOLVED.value:
+        return ""
 
+    async with SessionLocal() as db:
         # Sentiment streak: current turn + preceding passenger turns.
         prior = (
             await db.execute(
@@ -166,7 +167,7 @@ async def _history_triggers(state: AgentState) -> str:
 
         # Loop trigger: still non-routine after max_loop_turns.
         if (
-            conversation.turn_count > settings.max_loop_turns
+            state.get("conversation_turn_count", 0) > settings.max_loop_turns
             and state.get("intent", "routine") != "routine"
         ):
             return f"unresolved for more than {settings.max_loop_turns} turns"

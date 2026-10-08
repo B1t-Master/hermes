@@ -55,6 +55,24 @@ class Retriever:
             await self._store.close()
             self._store = None
 
+    async def warm(self) -> None:
+        """Preload the embedding model and store, so the first turn of a
+        fresh server does not stall on one-time initialization.
+
+        Runner's note: on a cold server the first WS turn used to sit on
+        \"thinking\" for 10-30s while sentence-transformers loaded. Call this
+        from the app lifespan; failures are logged, never fatal, because the
+        lazy paths retry on demand anyway.
+        """
+        try:
+            await self._embed(["warmup"])
+        except Exception:
+            logger.exception("Embedding warm-up failed; lazy load will retry")
+        try:
+            await self._get_store()
+        except Exception:
+            logger.exception("Store warm-up failed; lazy load will retry")
+
 
 _retriever: Retriever | None = None
 
