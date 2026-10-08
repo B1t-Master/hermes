@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.turns import run_turn
 from app.db import get_db
 from app.deps import get_current_passenger
-from app.models import Conversation, ConversationStatus, Message, MessageSender, Passenger
-from app.schemas import ConversationOut, MessageIn, MessageOut
+from app.models import Conversation, ConversationStatus, Message, Passenger
+from app.schemas import ConversationOut, MessageIn, MessageOut, TurnOut
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -52,29 +53,34 @@ async def list_messages(
     return result.scalars().all()
 
 
-# Placeholder: real RAG + sentiment wiring lands in Phase 4 (LangGraph agents).
-# The response stream (SSE) is wired in Phase 5.
-@router.post("/conversations/{conversation_id}/messages", response_model=MessageOut)
+@router.post("/conversations/{conversation_id}/messages", response_model=TurnOut)
 async def send_message(
     conversation_id: uuid.UUID,
     payload: MessageIn,
     passenger: Passenger = Depends(get_current_passenger),
     db: AsyncSession = Depends(get_db),
 ):
+    """Non-streaming fallback for the WS turn: same pipeline, one JSON reply."""
     conversation = await _get_owned_conversation(db, conversation_id, passenger.id)
     if conversation.status == ConversationStatus.RESOLVED:
         raise HTTPException(status_code=400, detail="Conversation is closed")
 
-    message = Message(
-        conversation_id=conversation.id,
-        sender=MessageSender.PASSENGER,
-        content=payload.content,
+    try:
+        result = await run_turn(conversation.id, payload.content)
+    except PermissionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Conversation not found") from None
+
+    return TurnOut(
+        passenger_message=result["passenger_message"],
+        bot_message=result.get("bot_message"),
+        escalate=bool(result.get("escalate")),
+        escalation_reason=result.get("escalation_reason") or None,
+        intent=result.get("intent"),
+        sentiment_score=result.get("sentiment_score"),
+        sentiment_label=result.get("sentiment_label"),
     )
-    db.add(message)
-    conversation.turn_count += 1
-    await db.commit()
-    await db.refresh(message)
-    return message
 
 
 async def _get_owned_conversation(

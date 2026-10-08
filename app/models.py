@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,6 +26,16 @@ class EscalationStatus(str, enum.Enum):
     PENDING = "pending"
     ASSIGNED = "assigned"
     RESOLVED = "resolved"
+
+
+def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    """`values_callable` for sqlalchemy.Enum: persist member VALUES (lowercase).
+
+    The Postgres enum labels were created lowercase ('active', 'pending', ...);
+    SQLAlchemy's default persists member NAMES ('ACTIVE'), which Postgres
+    rejects with InvalidTextRepresentation.
+    """
+    return [member.value for member in enum_cls]
 
 
 class Passenger(Base):
@@ -65,7 +75,8 @@ class Conversation(Base):
         UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True
     )
     status: Mapped[ConversationStatus] = mapped_column(
-        Enum(ConversationStatus, name="conversation_status"), default=ConversationStatus.ACTIVE
+        Enum(ConversationStatus, name="conversation_status", values_callable=_enum_values),
+        default=ConversationStatus.ACTIVE
     )
     escalation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     turn_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -86,10 +97,14 @@ class Message(Base):
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), index=True
     )
-    sender: Mapped[MessageSender] = mapped_column(Enum(MessageSender, name="message_sender"))
+    sender: Mapped[MessageSender] = mapped_column(
+        Enum(MessageSender, name="message_sender", values_callable=_enum_values)
+    )
     content: Mapped[str] = mapped_column(Text)
     sentiment_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     sentiment_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Citations shown on the bot message: [{"title": str, "url": str | None}, ...]
+    sources: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
@@ -106,7 +121,8 @@ class Escalation(Base):
     reason: Mapped[str] = mapped_column(String(64))
     summary: Mapped[str] = mapped_column(Text)
     status: Mapped[EscalationStatus] = mapped_column(
-        Enum(EscalationStatus, name="escalation_status"), default=EscalationStatus.PENDING
+        Enum(EscalationStatus, name="escalation_status", values_callable=_enum_values),
+        default=EscalationStatus.PENDING
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -139,7 +155,7 @@ class KnowledgeFragment(Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(512), nullable=True)  # None when ML stack not installed
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)  # None when ML stack not installed; 384 = bge-small-en-v1.5
     source_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     topic: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_fetched: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -1,0 +1,26 @@
+# Lint config for hermes. CI (phase 16) runs `ruff check app ingest tests`.
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = [
+    "E4",   # pycodestyle errors
+    "E7",
+    "E9",
+    "F",    # pyflakes (unused imports, undefined names)
+    "I",    # import sorting
+    "B",    # bugbear (common bug patterns)
+    "C4",   # comprehension simplifications
+    "PIE",  # misc lints
+    "UP",   # pyupgrade
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "B008",  # Depends() in argument defaults is the documented FastAPI idiom
+    "UP042", # str+Enum mixins are load-bearing for SQLAlchemy Enum(name)
+             # persistence; migrating to StrEnum risks silent DB churn
+]
+
+[lint.per-file-ignores]
+# Test files may import loosely for fixtures.
+"tests/*" = ["B"]

@@ -16,6 +16,12 @@ class PassengerLogin(BaseModel):
     password: str
 
 
+class AgentCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+
+
 class AnonymousSession(BaseModel):
     first_name: str = Field(default="Guest", min_length=1, max_length=120)
 
@@ -50,6 +56,7 @@ class MessageOut(BaseModel):
     content: str
     sentiment_score: float | None
     sentiment_label: str | None
+    sources: list[dict] | None = None
     created_at: datetime
 
 
@@ -71,3 +78,36 @@ class EscalationOut(BaseModel):
     summary: str
     status: str
     created_at: datetime
+
+
+class QueueEscalationOut(EscalationOut):
+    """Escalation as shown on the dashboard queue card."""
+
+    passenger_name: str
+    turn_count: int
+    conversation_status: str
+    agent_id: uuid.UUID | None = None
+    agent_name: str | None = None
+    last_message: str | None = None
+
+
+class AgentOut(BaseModel):
+    """Authenticated agent identity (for the dashboard header)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    email: str
+
+
+class TurnOut(BaseModel):
+    """One non-streaming passenger turn (REST fallback for the WS path)."""
+
+    passenger_message: MessageOut
+    bot_message: MessageOut | None
+    escalate: bool
+    escalation_reason: str | None = None
+    intent: str | None = None
+    sentiment_score: float | None = None
+    sentiment_label: str | None = None
