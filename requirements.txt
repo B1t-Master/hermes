@@ -25,7 +25,9 @@ langchain-core==0.3.29
 
 # --- ML / embeddings / sentiment (self-hosted, CPU) ---
 sentence-transformers==3.3.1
-torch==2.5.1
+# CPU-only wheels from the PyPI-mirrored pytorch index (avoids CUDA deps)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
 
 # --- Document ingestion & scraping ---
 pypdf==5.1.0
@@ -35,8 +37,11 @@ aiosqlite==0.20.0
 trafilatura==2.0.0
 beautifulsoup4==4.12.3
 httpx==0.28.1
+# Chrome TLS impersonation: kenya-airways.com (Cloudflare) 403s plain httpx
+curl_cffi==0.16.3
 lxml_html_clean==0.2.0
 
 # --- Observability / eval ---
-langsmith==0.3.4
+# langsmith unpinned: langchain-core 0.3.x requires langsmith<0.3, so let the
+# resolver pick a compatible version instead of hard-conflicting like 0.3.4 did
 ragas==0.2.12

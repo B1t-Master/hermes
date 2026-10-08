@@ -83,7 +83,7 @@ def discover_urls(list_path: Path = SOURCES_LIST) -> list[Source]:
     sources: list[Source] = []
     lines = (line.strip() for line in list_path.read_text(encoding="utf-8").splitlines())
     for line in lines:
-        if line.startswith("http://") or line.startswith("https://"):
+        if line.startswith(("http://", "https://")):
             sources.append(
                 Source(
                     title=_title_from_url(line),
@@ -98,7 +98,7 @@ def discover_urls(list_path: Path = SOURCES_LIST) -> list[Source]:
 def discover_all(extra_sources: list[str] | None = None) -> list[Source]:
     sources = discover_local() + discover_urls()
     for raw in extra_sources or []:
-        if raw.startswith("http://") or raw.startswith("https://"):
+        if raw.startswith(("http://", "https://")):
             sources.append(
                 Source(title=_title_from_url(raw), topic=_infer_topic(raw), kind="url", url=raw)
             )

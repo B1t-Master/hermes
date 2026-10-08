@@ -39,7 +39,7 @@ async def ingest_sources(
     can_embed = embed and embedder is not None and embedder.available
     if embed and embedder is not None and not embedder.available and warn:
         print(
-            "[warn] sentence-transformers not installed — storing chunks without vectors. "
+            "[warn] sentence-transformers not installed; storing chunks without vectors. "
             "Install torch + sentence-transformers for real embeddings.",
             file=sys.stderr,
         )

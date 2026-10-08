@@ -1,21 +1,23 @@
-import os
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    app_name: str = "Zuri Agentic RAG"
+    app_name: str = "hermes Agentic RAG"
     debug: bool = True
+    sql_echo: bool = False
     secret_key: str = "change-me"
     access_token_expire_minutes: int = 60
 
-    database_url: str = "postgresql+asyncpg://localhost:5432/zuri"
+    database_url: str = "postgresql+asyncpg://localhost:5432/hermes"
 
     groq_api_key: str = ""
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com/v1"
+    llm_model: str = "openai/gpt-oss-120b"
+    llm_fallback_model: str = "openai/gpt-oss-20b"
+    deepseek_model: str = "deepseek-chat"
     llm_timeout_seconds: float = 5.0
     llm_max_retries: int = 3
 

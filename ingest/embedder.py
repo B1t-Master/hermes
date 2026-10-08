@@ -1,6 +1,6 @@
 from app.config import settings
 
-EMBEDDING_DIM = 512
+EMBEDDING_DIM = 384  # bge-small-en-v1.5 outputs 384 dims (not 512)
 
 
 class Embedder:
@@ -21,12 +21,12 @@ class Embedder:
             return self._model
         try:
             from sentence_transformers import SentenceTransformer
-        except ImportError:
+        except ImportError as exc:
             raise RuntimeError(
                 "sentence-transformers is not installed in this venv. "
                 "Run: pip install torch sentence-transformers "
                 "(see README 'Cost notes')."
-            )
+            ) from exc
         self._model = SentenceTransformer(self.model_name)
         return self._model
 

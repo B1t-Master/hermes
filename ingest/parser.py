@@ -37,15 +37,33 @@ def parse_text_file(path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
-def scrape_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> str:
-    response = httpx.get(url, timeout=timeout, follow_redirects=True)
-    response.raise_for_status()
+def _fetch_html(url: str, timeout: float = DEFAULT_TIMEOUT) -> str:
+    """Fetch page HTML.
 
-    extracted = trafilatura.extract(response.text)
+    Tries curl_cffi first (Chrome TLS impersonation): Cloudflare 403s plain
+    httpx/curl on kenya-airways.com even with a browser User-Agent.
+    Falls back to httpx if curl_cffi is unavailable or fails.
+    """
+    try:
+        from curl_cffi import requests as curl_requests
+
+        response = curl_requests.get(url, impersonate="chrome", timeout=timeout)
+        response.raise_for_status()
+        return response.text
+    except Exception:
+        response = httpx.get(url, timeout=timeout, follow_redirects=True)
+        response.raise_for_status()
+        return response.text
+
+
+def scrape_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> str:
+    html = _fetch_html(url, timeout)
+
+    extracted = trafilatura.extract(html)
     if extracted and extracted.strip():
         return extracted.strip()
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     for element in soup(["script", "style", "nav", "footer", "header"]):
         element.decompose()
     text = soup.get_text("\n", strip=True)
