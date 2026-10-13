@@ -3,7 +3,9 @@ import type { FormEvent } from "react";
 import { api } from "./api";
 import { useAuth } from "./auth";
 import RichText from "./RichText";
+import Wings from "./Wings";
 import { formatTime } from "./format";
+import { playAgentJoinedCue, playEscalationCue } from "./sound";
 import type { Conversation, Message, ServerFrame } from "./types";
 import { connectWs } from "./ws";
 import type { WsHandle, WsStatus } from "./ws";
@@ -19,11 +21,21 @@ export default function ChatWidget() {
   const [agentTyping, setAgentTyping] = useState(false);
   const [status, setStatus] = useState<WsStatus>("connecting");
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const wsRef = useRef<WsHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const agentTypingTimer = useRef<number | null>(null);
+  const toastTimer = useRef<number | null>(null);
+  /** Guard so the "agent joined" cue fires once per escalation. */
+  const agentAnnouncedRef = useRef(false);
   /** Current conversation id, read by stale-socket frame handlers. */
   const activeIdRef = useRef<string | null>(null);
+
+  const showToast = (text: string) => {
+    setToast(text);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 8000);
+  };
 
   /* ---- initial load: resume the newest open conversation or create one ---- */
   useEffect(() => {
@@ -61,6 +73,7 @@ export default function ChatWidget() {
     setBotThinking(false);
     setAgentTyping(false);
     setError(null);
+    agentAnnouncedRef.current = false;
 
     api.listMessages(token, cid).then(setMessages).catch(() => {
       /* resync on reconnect covers transient failures */
@@ -135,10 +148,17 @@ export default function ChatWidget() {
         case "agent_message":
           setAgentTyping(false);
           upsert(f.message);
+          if (!agentAnnouncedRef.current) {
+            agentAnnouncedRef.current = true;
+            playAgentJoinedCue();
+            showToast("A human agent has joined the chat.");
+          }
           break;
         case "escalated":
           setConvStatus(cid, "escalated");
           refreshConversations();
+          playEscalationCue();
+          showToast("Connecting you to a human agent — they'll reply right here.");
           break;
         case "resolved":
           setConvStatus(cid, "resolved");
@@ -175,6 +195,7 @@ export default function ChatWidget() {
       handle.close();
       wsRef.current = null;
       if (agentTypingTimer.current) window.clearTimeout(agentTypingTimer.current);
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
     };
   }, [token, activeId]);
 
@@ -221,7 +242,9 @@ export default function ChatWidget() {
   return (
     <main className="chat">
       <header>
-        <h1>hermes</h1>
+        <h1>
+          <Wings /> hermes
+        </h1>
         <div className="header-meta">
           <span className={`badge conn-${status}`}>{status}</span>
           <span className="badge role">{role}</span>
@@ -230,6 +253,12 @@ export default function ChatWidget() {
           </button>
         </div>
       </header>
+
+      {toast && (
+        <div className="toast" role="status">
+          {toast}
+        </div>
+      )}
 
       <div className="chat-layout">
         <aside className="conv-list">
@@ -270,7 +299,15 @@ export default function ChatWidget() {
                 className={`message ${m.sender}${m.pending ? " pending" : ""}`}
               >
                 <div className="meta">
-                  <strong>{m.sender === "bot" ? "hermes" : m.sender}</strong>
+                  <strong>
+                    {m.sender === "bot" ? (
+                      <>
+                        <Wings size={15} /> hermes
+                      </>
+                    ) : (
+                      m.sender
+                    )}
+                  </strong>
                   <span>{formatTime(m.created_at)}</span>
                   {m.sentiment_label && m.sender === "passenger" && (
                     <span className={`badge ${m.sentiment_label}`}>
@@ -284,15 +321,13 @@ export default function ChatWidget() {
                 {m.sources && m.sources.length > 0 && (
                   <div className="sources">
                     {m.sources.map((s, i) => (
-                      <a
+                      <span
                         key={`${s.title}-${i}`}
-                        href={s.url ?? "#"}
-                        target="_blank"
-                        rel="noreferrer"
                         className="source"
+                        title={s.url ?? undefined}
                       >
                         {s.title}
-                      </a>
+                      </span>
                     ))}
                   </div>
                 )}
@@ -311,7 +346,14 @@ export default function ChatWidget() {
             )}
             {botThinking && streaming === null && (
               <div className="message bot thinking">
-                <p>hermes is thinking…</p>
+                <p>
+                  hermes is thinking
+                  <span className="dots" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                </p>
               </div>
             )}
             {agentTyping && <p className="notice small">Agent is typing…</p>}

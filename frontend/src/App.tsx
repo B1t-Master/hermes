@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent } from "react";
 import { useAuth } from "./auth";
 import ChatWidget from "./ChatWidget";
 import Dashboard from "./Dashboard";
+import Logo from "./Logo";
 
 export default function App() {
   const { token, role } = useAuth();
@@ -46,8 +47,13 @@ function AuthGate() {
 
   return (
     <main className="auth">
-      <h1>hermes</h1>
-      <p className="tagline">Kenya Airways passenger support</p>
+      <div className="auth-brand">
+        <Logo size={84} />
+        <div>
+          <h1>hermes</h1>
+          <p className="tagline">Kenya Airways passenger support</p>
+        </div>
+      </div>
       <form onSubmit={submit} noValidate={false}>
         {mode === "register" && (
           <input

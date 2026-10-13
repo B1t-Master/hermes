@@ -210,9 +210,10 @@ button:disabled {
 .message {
   border: var(--border);
   padding: 0.75rem 1rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 1.35rem;
   background: var(--white);
   max-width: 85%;
+  position: relative;
 }
 
 .message.bot {
@@ -229,6 +230,57 @@ button:disabled {
 .message.agent {
   background: var(--emerald);
   color: var(--white);
+}
+
+/* Live chat messages slide in. Scoped to the chat surface so it does not replay
+   every time a dashboard tab is switched. */
+.chat .message {
+  animation: message-in 170ms ease-out both;
+}
+
+/* Speech-bubble tails: a black-edged triangle under each bubble. */
+.message::before,
+.message::after {
+  content: "";
+  position: absolute;
+  bottom: -14px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+.message.bot::before,
+.message.agent::before {
+  left: 16px;
+  border-width: 14px 14px 0 0;
+  border-color: var(--black) transparent transparent transparent;
+}
+
+.message.bot::after {
+  left: 19px;
+  bottom: -11px;
+  border-width: 11px 11px 0 0;
+  border-color: var(--bg) transparent transparent transparent;
+}
+
+.message.agent::after {
+  left: 19px;
+  bottom: -11px;
+  border-width: 11px 11px 0 0;
+  border-color: var(--emerald) transparent transparent transparent;
+}
+
+.message.passenger::before {
+  right: 16px;
+  border-width: 14px 0 0 14px;
+  border-color: var(--black) transparent transparent transparent;
+}
+
+.message.passenger::after {
+  right: 19px;
+  bottom: -11px;
+  border-width: 11px 0 0 11px;
+  border-color: var(--red) transparent transparent transparent;
 }
 
 .message .meta {
@@ -892,5 +944,223 @@ input:focus-visible,
 
   .message {
     max-width: 100%;
+  }
+}
+
+/* ================================================================== */
+/* Boot/auth screen: brand mark + vertically centred form              */
+/* ================================================================== */
+
+.auth {
+  min-height: 100vh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  text-align: left;
+}
+
+.auth-brand h1 {
+  color: var(--red);
+  margin: 0;
+}
+
+.auth-brand .tagline {
+  margin: 0;
+}
+
+.logo-mark {
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.wings {
+  flex-shrink: 0;
+  vertical-align: middle;
+  object-fit: contain;
+}
+
+h1 .wings,
+strong .wings {
+  margin-right: 0.3rem;
+}
+
+/* ================================================================== */
+/* Animations (sharp + snappy, brutalist-appropriate)                  */
+/* ================================================================== */
+
+@keyframes message-in {
+  from {
+    transform: translateY(9px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(227, 27, 35, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(227, 27, 35, 0);
+  }
+}
+
+@keyframes dot-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dashboard tab panels: one snappy animation for the whole panel on switch,
+   instead of re-animating every card/message inside it. */
+.tab-panel:not([hidden]) {
+  animation: panel-in 150ms ease-out both;
+}
+
+.notice.warn {
+  animation: pulse 1.6s ease-out 3;
+}
+
+/* Typing dots for the bot "thinking" state. */
+.dots {
+  display: inline-flex;
+  gap: 0.15rem;
+  margin-left: 0.25rem;
+  vertical-align: middle;
+}
+
+.dots i {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dot-bounce 1s infinite ease-in-out;
+}
+
+.dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* ================================================================== */
+/* Toast (new escalation / agent handoff feedback)                     */
+/* ================================================================== */
+
+.toast {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 100;
+  max-width: min(360px, 90vw);
+  background: var(--gold);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+  animation: toast-in 200ms ease-out both;
+}
+
+/* ================================================================== */
+/* Extra responsive polish (mobile / tablet)                           */
+/* ================================================================== */
+
+@media (max-width: 720px) {
+  body {
+    background-size: 18px 18px;
+  }
+
+  main {
+    margin: 1rem auto;
+    padding: 0.9rem;
+  }
+
+  header {
+    flex-wrap: wrap;
+  }
+
+  .header-meta {
+    width: 100%;
+  }
+
+  .queue-grid,
+  .kb-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tabs {
+    overflow-x: auto;
+  }
+
+  .kb-item header time {
+    margin-left: 0;
+  }
+
+  .chat-body {
+    max-height: 70vh;
+  }
+
+  .transcript-panel .chat-body {
+    max-height: 55vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

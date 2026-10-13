@@ -29,6 +29,9 @@ Thumbs.db
 
 # Local data
 data_sources/*.tmp
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 .hermes_store.sqlite
 .flights.sqlite
 .demo.sqlite

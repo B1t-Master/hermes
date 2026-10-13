@@ -10,6 +10,7 @@ history. The tradeoff: a crash mid-graph loses that one inbound message.
 """
 
 import logging
+import re
 import uuid
 
 from sqlalchemy import select, update
@@ -21,6 +22,29 @@ from app.models import Conversation, ConversationStatus, Message, MessageSender
 logger = logging.getLogger(__name__)
 
 HISTORY_LIMIT = 10
+
+# Passenger-facing answers must never expose the internal data-source origin
+# (the docs are ingested from KQ URLs/file keys). Strip markdown links and bare
+# URLs from the visible answer text; citations stay in the sources[] metadata.
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(\s*(?:https?://|www\.)[^)]*\)", re.IGNORECASE)
+_URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
+
+
+def strip_source_urls(text: str) -> str:
+    """Remove source URLs from answer text, keeping any link label.
+
+    The UI renders ``sources[]`` separately (title-only), so the body can stay
+    clean. Handles markdown links (``[title](url)`` -> ``[title]``) and bare
+    URLs; collapses the whitespace/parens left behind.
+    """
+    if not text:
+        return text
+    cleaned = _MD_LINK_RE.sub(r"[\1]", text)
+    cleaned = _URL_RE.sub("", cleaned)
+    cleaned = re.sub(r"\(\s*\)|\[\s*\]", "", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned.strip()
+
 
 _ROLE = {MessageSender.PASSENGER.value: "user", MessageSender.BOT.value: "assistant", MessageSender.AGENT.value: "assistant"}
 def message_to_dict(message: Message) -> dict:
@@ -125,7 +149,8 @@ async def run_turn(
     result = dict(result)
 
     escalated = bool(result.get("escalate"))
-    answer = result.get("answer", "")
+    answer = strip_source_urls(result.get("answer", ""))
+    result["answer"] = answer
 
     async with SessionLocal() as db:
         passenger_message = Message(

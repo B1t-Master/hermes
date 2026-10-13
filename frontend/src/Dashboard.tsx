@@ -3,7 +3,9 @@ import type { FormEvent } from "react";
 import { api, ApiError } from "./api";
 import { useAuth } from "./auth";
 import RichText from "./RichText";
+import Wings from "./Wings";
 import { formatDate, formatTime } from "./format";
+import { playEscalationCue } from "./sound";
 import type {
   AgentInfo,
   IngestReport,
@@ -42,8 +44,23 @@ export default function Dashboard() {
   const convWs = useRef<WsHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  /* ---- transient dashboard toast (new escalations) ------------------------- */
+  const [dashToast, setDashToast] = useState<string | null>(null);
+  const dashToastTimer = useRef<number | null>(null);
+  const showDashToast = (text: string) => {
+    setDashToast(text);
+    if (dashToastTimer.current) window.clearTimeout(dashToastTimer.current);
+    dashToastTimer.current = window.setTimeout(() => setDashToast(null), 6000);
+  };
+
   /* ---- knowledge base tab state -------------------------------------------- */
   const [view, setView] = useState<View>("queue");
+  /** Panels mount lazily, then stay mounted so tab switches are instant. */
+  const [kbMounted, setKbMounted] = useState(false);
+  const showView = (next: View) => {
+    setView(next);
+    if (next === "kb") setKbMounted(true);
+  };
   const [kbDocs, setKbDocs] = useState<KnowledgeDocument[]>([]);
   const [kbReport, setKbReport] = useState<IngestReport | null>(null);
   const [kbBusy, setKbBusy] = useState(false);
@@ -82,9 +99,10 @@ export default function Dashboard() {
   const loadKbRef = useRef(loadKb);
   loadKbRef.current = loadKb;
 
+  // Preload the KB list so the tab is populated the instant it is opened.
   useEffect(() => {
-    if (token && view === "kb") void loadKbRef.current();
-  }, [token, view]);
+    if (token) void loadKbRef.current();
+  }, [token]);
 
   /** Run a KB mutation, surface its ingest report, then refresh the list. */
   const runKb = async (fn: () => Promise<IngestReport | { ok: boolean } | void>) => {
@@ -161,7 +179,13 @@ export default function Dashboard() {
     const handle = connectWs("/ws/dashboard", token, {
       onStatus: setStatus,
       onFrame: (f: ServerFrame) => {
-        if (f.type === "queue_update") void reloadRef.current();
+        if (f.type === "queue_update") {
+          void reloadRef.current();
+          if (f.action === "created") {
+            playEscalationCue();
+            showDashToast("New escalation in the queue.");
+          }
+        }
       },
     });
     dashWs.current = handle;
@@ -344,7 +368,9 @@ export default function Dashboard() {
   return (
     <main className="dashboard">
       <header>
-        <h1>hermes ops</h1>
+        <h1>
+          <Wings /> hermes ops
+        </h1>
         <div className="header-meta">
           <span className={`badge conn-${status}`}>{status}</span>
           <span className="badge role">{me ? me.name : "agent"}</span>
@@ -354,25 +380,30 @@ export default function Dashboard() {
         </div>
       </header>
 
+      {dashToast && (
+        <div className="toast" role="status">
+          {dashToast}
+        </div>
+      )}
+
       <nav className="tabs">
         <button
           className={`tab${view === "queue" ? " active" : ""}`}
-          onClick={() => setView("queue")}
+          onClick={() => showView("queue")}
         >
           Support queue
           {queue.length > 0 && <span className="tab-count">{queue.length}</span>}
         </button>
         <button
           className={`tab${view === "kb" ? " active" : ""}`}
-          onClick={() => setView("kb")}
+          onClick={() => showView("kb")}
         >
           Knowledge base
         </button>
       </nav>
 
-      {view === "queue" && (
-        <>
-          <div className="filter-bar">
+      <div className="tab-panel" hidden={view !== "queue"}>
+        <div className="filter-bar">
         {FILTERS.map((f) => (
           <button
             key={f}
@@ -465,7 +496,15 @@ export default function Dashboard() {
             {transcript.map((m) => (
               <div key={m.id} className={`message ${m.sender}${m.pending ? " pending" : ""}`}>
                 <div className="meta">
-                  <strong>{m.sender === "bot" ? "hermes" : m.sender}</strong>
+                  <strong>
+                    {m.sender === "bot" ? (
+                      <>
+                        <Wings size={15} /> hermes
+                      </>
+                    ) : (
+                      m.sender
+                    )}
+                  </strong>
                   <span>{formatTime(m.created_at)}</span>
                 </div>
                 <div className="body">
@@ -495,10 +534,10 @@ export default function Dashboard() {
           )}
         </section>
       )}
-        </>
-      )}
+      </div>
 
-      {view === "kb" && (
+      {kbMounted && (
+        <div className="tab-panel" hidden={view !== "kb"}>
         <section className="kb-panel">
           <header>
             <h2>Knowledge base</h2>
@@ -583,6 +622,7 @@ export default function Dashboard() {
             </button>
           </div>
         </section>
+        </div>
       )}
     </main>
   );
