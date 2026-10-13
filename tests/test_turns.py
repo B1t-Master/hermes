@@ -1,6 +1,6 @@
 import unittest
 
-from app.agents.turns import citations_from_chunks, strip_source_urls
+from app.agents.turns import citations_from_chunks, strip_source_section, strip_source_urls
 
 
 class StripSourceUrlsTest(unittest.TestCase):
@@ -34,6 +34,21 @@ class CitationsTest(unittest.TestCase):
         self.assertEqual(len(citations), 2)
         self.assertEqual(citations[0]["score"], 0.1235)
         self.assertNotIn("score", citations[1])
+
+
+class StripSourceSectionTest(unittest.TestCase):
+    def test_drops_trailing_sources_block(self):
+        text = "Baggage is 23kg.\n\nSources: Baggage FAQ, Conditions of Carriage"
+        self.assertEqual(strip_source_section(text), "Baggage is 23kg.")
+
+    def test_drops_trailing_singular_source(self):
+        self.assertEqual(strip_source_section("Sure.\n\nSource: FAQ"), "Sure.")
+
+    def test_keeps_plain_answer(self):
+        self.assertEqual(strip_source_section("Just an answer."), "Just an answer.")
+
+    def test_empty(self):
+        self.assertEqual(strip_source_section(""), "")
 
 
 if __name__ == "__main__":

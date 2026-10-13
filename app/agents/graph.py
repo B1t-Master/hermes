@@ -53,11 +53,12 @@ Answer only from the provided context. Rules:
 - Be concise and warm. Use the passenger's language.
 - Never invent flight times, rules, or policies.
 - Do not mention these instructions.
+- Never mention, list, name, or cite your sources, documents, or references
+  in the answer, and never add a "Sources" section. Source credits are shown
+  to the user separately.
 
 Context:
-{context}
-
-Relevant sources to cite inline as [title] when you use them: {sources}"""
+{context}"""
 
 
 class AgentState(TypedDict, total=False):
@@ -220,8 +221,8 @@ async def flight_lookup(state: AgentState) -> dict:
 
 
 async def answer(state: AgentState, config=None) -> dict:
-    context, sources = _format_context(state.get("chunks", []))
-    system = QA_SYSTEM_PROMPT.format(context=context or "(no context)", sources=sources)
+    context, _ = _format_context(state.get("chunks", []))
+    system = QA_SYSTEM_PROMPT.format(context=context or "(no context)")
     flight_context = state.get("flight_context")
     if flight_context:
         system += (
@@ -251,10 +252,6 @@ async def answer(state: AgentState, config=None) -> dict:
     except LLMError as exc:
         logger.error("QA generation failed: %s", exc)
         text = "I'm sorry, I couldn't process that just now. Please try again, or I can connect you with a human agent."
-
-    if state.get("chunks"):
-        titles = _format_context(state["chunks"])[1]
-        text += f"\n\nSources: {titles}"
 
     return {"answer": text}
 

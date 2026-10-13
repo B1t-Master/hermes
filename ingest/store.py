@@ -1,6 +1,7 @@
 import json
 import math
 import re
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -8,6 +9,16 @@ from datetime import UTC, datetime
 from app.config import settings
 
 LOCAL_SQLITE_PATH = ".hermes_store.sqlite"
+
+
+def _parse_datetime(value: str | None) -> datetime:
+    """Best-effort ISO parse for SQLite text timestamps; now() on failure."""
+    if value:
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            pass
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -62,6 +73,15 @@ class Store(ABC):
         self, *, source_key: str, title: str, topic: str, doc_type: str, content_hash: str,
         chunks: list[str], embeddings: list[list[float] | None] | None, source_url: str | None,
     ) -> str: ...
+
+    @abstractmethod
+    async def list_documents(self) -> list[dict]:
+        """Every stored document as a dict with keys: id, source_url, title,
+        doc_type, content_hash, last_fetched, created_at, fragment_count."""
+
+    @abstractmethod
+    async def delete_source(self, source_key: str) -> bool:
+        """Delete a document and its fragments; False when it did not exist."""
 
     async def ensure_schema(self) -> None:  # noqa: B027 - intentional default
         """Create/verify tables & extension. No-op by default (SqliteStore
@@ -174,6 +194,52 @@ class PgVectorStore(Store):
             await session.commit()
             return status
 
+    async def list_documents(self) -> list[dict]:
+        from sqlalchemy import func, select
+
+        frag_count = func.count(self._KnowledgeFragment.id).label("fragment_count")
+        stmt = (
+            select(self._KnowledgeDocument, frag_count)
+            .outerjoin(
+                self._KnowledgeFragment,
+                self._KnowledgeFragment.document_id == self._KnowledgeDocument.id,
+            )
+            .group_by(self._KnowledgeDocument.id)
+            .order_by(self._KnowledgeDocument.created_at.desc())
+        )
+        async with self._SessionLocal() as session:
+            rows = (await session.execute(stmt)).all()
+        return [
+            {
+                "id": str(doc.id),
+                "source_url": doc.source_url,
+                "title": doc.title,
+                "doc_type": doc.doc_type,
+                "content_hash": doc.content_hash,
+                "last_fetched": doc.last_fetched,
+                "created_at": doc.created_at,
+                "fragment_count": int(fc or 0),
+            }
+            for doc, fc in rows
+        ]
+
+    async def delete_source(self, source_key: str) -> bool:
+        from sqlalchemy import select
+
+        async with self._SessionLocal() as session:
+            doc = (
+                await session.execute(
+                    select(self._KnowledgeDocument).where(
+                        self._KnowledgeDocument.source_url == source_key
+                    )
+                )
+            ).scalar_one_or_none()
+            if doc is None:
+                return False
+            await session.delete(doc)  # fragments cascade via the relationship
+            await session.commit()
+        return True
+
     async def search(
         self, query_embedding: list[float] | None, query_text: str, k: int = 5
     ) -> list[RetrievedChunk]:
@@ -254,6 +320,8 @@ class SqliteStore(Store):
 
         self._db = await aiosqlite.connect(self._path)
         await self._db.execute("PRAGMA foreign_keys = ON")
+        # WAL keeps concurrent reads (retrieval) from blocking on an upload write.
+        await self._db.execute("PRAGMA journal_mode = WAL")
         await self._db.execute(
             """
             CREATE TABLE IF NOT EXISTS documents (
@@ -322,6 +390,44 @@ class SqliteStore(Store):
             )
         await self._db.commit()
         return status
+
+    async def list_documents(self) -> list[dict]:
+        cursor = await self._db.execute(
+            """SELECT d.source_key, d.title, d.doc_type, d.content_hash, d.last_fetched,
+                      (SELECT COUNT(*) FROM fragments f WHERE f.source_key = d.source_key)
+                 FROM documents d
+                ORDER BY d.last_fetched DESC"""
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+        result: list[dict] = []
+        for source_key, title, doc_type, content_hash, last_fetched, frag_count in rows:
+            fetched = _parse_datetime(last_fetched)
+            result.append(
+                {
+                    "id": str(uuid.uuid5(uuid.NAMESPACE_URL, source_key)),
+                    "source_url": source_key,
+                    "title": title,
+                    "doc_type": doc_type,
+                    "content_hash": content_hash,
+                    "last_fetched": fetched,
+                    "created_at": fetched,
+                    "fragment_count": int(frag_count or 0),
+                }
+            )
+        return result
+
+    async def delete_source(self, source_key: str) -> bool:
+        cursor = await self._db.execute(
+            "SELECT 1 FROM documents WHERE source_key = ?", (source_key,)
+        )
+        exists = await cursor.fetchone()
+        await cursor.close()
+        if exists is None:
+            return False
+        await self._db.execute("DELETE FROM documents WHERE source_key = ?", (source_key,))
+        await self._db.commit()
+        return True
 
     async def reset(self) -> None:
         await self._db.execute("DELETE FROM documents")

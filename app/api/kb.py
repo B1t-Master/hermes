@@ -2,12 +2,9 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from sqlalchemy import delete, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db
 from app.deps import get_current_agent
-from app.models import Agent, KnowledgeDocument, KnowledgeFragment
+from app.models import Agent
 from app.schemas import IngestReportOut, KnowledgeDocumentOut, UrlIngestIn
 
 router = APIRouter(prefix="/kb", tags=["kb"])
@@ -42,33 +39,17 @@ def _parse_source_key(key: str) -> tuple[str, str | None]:
 
 
 @router.get("/sources", response_model=list[KnowledgeDocumentOut])
-async def list_sources(
-    agent: Agent = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_db),
-):
-    frag_count = func.count(KnowledgeFragment.id).label("fragment_count")
-    stmt = (
-        select(KnowledgeDocument, frag_count)
-        .outerjoin(KnowledgeFragment, KnowledgeFragment.document_id == KnowledgeDocument.id)
-        .group_by(KnowledgeDocument.id)
-        .order_by(KnowledgeDocument.created_at.desc())
-    )
-    rows = (await db.execute(stmt)).all()
-    result = []
-    for doc, fc in rows:
-        result.append(
-            KnowledgeDocumentOut(
-                id=doc.id,
-                source_url=doc.source_url,  # this is the source key
-                title=doc.title,
-                doc_type=doc.doc_type,
-                content_hash=doc.content_hash,
-                last_fetched=doc.last_fetched,
-                created_at=doc.created_at,
-                fragment_count=int(fc) if fc is not None else 0,
-            )
-        )
-    return result
+async def list_sources(agent: Agent = Depends(get_current_agent)):
+    # Read through the ingest store (pgvector or local SQLite) so the list,
+    # uploads and retrieval always agree on one corpus.
+    from ingest.store import resolve_store
+
+    store = await resolve_store("auto")
+    try:
+        documents = await store.list_documents()
+    finally:
+        await store.close()
+    return [KnowledgeDocumentOut(**doc) for doc in documents]
 
 
 @router.post("/upload", response_model=IngestReportOut)
@@ -255,15 +236,15 @@ async def reingest_source(
 async def delete_source(
     source_key: str,
     agent: Agent = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_db),
 ):
-    # find document
-    doc = (
-        await db.execute(
-            select(KnowledgeDocument).where(KnowledgeDocument.source_url == source_key)
-        )
-    ).scalar_one_or_none()
-    if doc is None:
+    from ingest.store import resolve_store
+
+    store = await resolve_store("auto")
+    try:
+        found = await store.delete_source(source_key)
+    finally:
+        await store.close()
+    if not found:
         raise HTTPException(status_code=404, detail="Source not found")
 
     # delete file if local
@@ -276,8 +257,6 @@ async def delete_source(
         except Exception:
             pass  # ignore file deletion errors
 
-    await db.execute(delete(KnowledgeDocument).where(KnowledgeDocument.id == doc.id))
-    await db.commit()
     return {"ok": True}
 
 

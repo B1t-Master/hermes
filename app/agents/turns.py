@@ -28,6 +28,8 @@ HISTORY_LIMIT = 10
 # URLs from the visible answer text; citations stay in the sources[] metadata.
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(\s*(?:https?://|www\.)[^)]*\)", re.IGNORECASE)
 _URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
+# A trailing "Sources: ..." block some models append despite instructions.
+_SOURCES_TRAILER = re.compile(r"\n+\s*sources?\s*:.*$", re.IGNORECASE | re.DOTALL)
 
 
 def strip_source_urls(text: str) -> str:
@@ -46,7 +48,20 @@ def strip_source_urls(text: str) -> str:
     return cleaned.strip()
 
 
+def strip_source_section(text: str) -> str:
+    """Drop a trailing "Sources: ..." block a model may append.
+
+    Source credits belong to `message.sources` (rendered as chips by the UI),
+    never to the answer body. Belt-and-braces with the prompt instruction.
+    """
+    if not text:
+        return text
+    return _SOURCES_TRAILER.sub("", text).rstrip()
+
+
 _ROLE = {MessageSender.PASSENGER.value: "user", MessageSender.BOT.value: "assistant", MessageSender.AGENT.value: "assistant"}
+
+
 def message_to_dict(message: Message) -> dict:
     return {
         "id": str(message.id),
@@ -149,7 +164,7 @@ async def run_turn(
     result = dict(result)
 
     escalated = bool(result.get("escalate"))
-    answer = strip_source_urls(result.get("answer", ""))
+    answer = strip_source_section(strip_source_urls(result.get("answer", "")))
     result["answer"] = answer
 
     async with SessionLocal() as db:
