@@ -3,13 +3,22 @@ import type { FormEvent } from "react";
 import { api, ApiError } from "./api";
 import { useAuth } from "./auth";
 import RichText from "./RichText";
-import { formatTime } from "./format";
-import type { AgentInfo, Message, QueueEscalation, ServerFrame } from "./types";
+import { formatDate, formatTime } from "./format";
+import type {
+  AgentInfo,
+  IngestReport,
+  KnowledgeDocument,
+  Message,
+  QueueEscalation,
+  ServerFrame,
+} from "./types";
 import { connectWs } from "./ws";
 import type { WsHandle, WsStatus } from "./ws";
 
 type Filter = "active" | "pending" | "assigned" | "resolved" | "all";
 const FILTERS: Filter[] = ["active", "pending", "assigned", "resolved", "all"];
+
+type View = "queue" | "kb";
 
 function age(iso: string): string {
   const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
@@ -33,6 +42,17 @@ export default function Dashboard() {
   const convWs = useRef<WsHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  /* ---- knowledge base tab state -------------------------------------------- */
+  const [view, setView] = useState<View>("queue");
+  const [kbDocs, setKbDocs] = useState<KnowledgeDocument[]>([]);
+  const [kbReport, setKbReport] = useState<IngestReport | null>(null);
+  const [kbBusy, setKbBusy] = useState(false);
+  const [kbError, setKbError] = useState<string | null>(null);
+  const [urlText, setUrlText] = useState("");
+  const [embed, setEmbed] = useState(true);
+  const [force, setForce] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
   /* ---- queue reload (kept fresh via ref so WS callbacks see latest filter) -- */
   const reload = async () => {
     if (!token) return;
@@ -48,6 +68,83 @@ export default function Dashboard() {
   };
   const reloadRef = useRef(reload);
   reloadRef.current = reload;
+
+  /* ---- knowledge base: load + mutations (all agent-only) -------------------- */
+  const loadKb = async () => {
+    if (!token) return;
+    try {
+      setKbDocs(await api.kbList(token));
+      setKbError(null);
+    } catch (err) {
+      setKbError(err instanceof Error ? err.message : String(err));
+    }
+  };
+  const loadKbRef = useRef(loadKb);
+  loadKbRef.current = loadKb;
+
+  useEffect(() => {
+    if (token && view === "kb") void loadKbRef.current();
+  }, [token, view]);
+
+  /** Run a KB mutation, surface its ingest report, then refresh the list. */
+  const runKb = async (fn: () => Promise<IngestReport | { ok: boolean } | void>) => {
+    setKbBusy(true);
+    setKbError(null);
+    setKbReport(null);
+    try {
+      const result = await fn();
+      if (result && "summary" in result) setKbReport(result);
+      await loadKbRef.current();
+    } catch (err) {
+      setKbError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setKbBusy(false);
+    }
+  };
+
+  const uploadDocs = (e: FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    const files = Array.from(fileRef.current?.files ?? []);
+    if (files.length === 0) return;
+    void runKb(async () => {
+      const report = await api.kbUpload(token, files, embed, force);
+      if (fileRef.current) fileRef.current.value = "";
+      return report;
+    });
+  };
+
+  const ingestUrls = (e: FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    const urls = urlText
+      .split(/\s+/)
+      .map((u) => u.trim())
+      .filter(Boolean);
+    if (urls.length === 0) return;
+    void runKb(async () => {
+      const report = await api.kbIngestUrls(token, urls);
+      setUrlText("");
+      return report;
+    });
+  };
+
+  const reingest = (key: string) => {
+    if (!token) return;
+    void runKb(() => api.kbReingest(token, key));
+  };
+
+  const removeSource = (doc: KnowledgeDocument) => {
+    if (!token || !doc.source_url) return;
+    if (!window.confirm(`Remove "${doc.title}" and all of its chunks?`)) return;
+    void runKb(() => api.kbDelete(token, doc.source_url as string));
+  };
+
+  const resetKb = () => {
+    if (!token) return;
+    if (!window.confirm("Delete ALL knowledge base documents and chunks?")) return;
+    void runKb(() => api.kbReset(token));
+  };
 
   /* ---- identity + queue fetch ---------------------------------------------- */
   useEffect(() => {
@@ -257,7 +354,25 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="filter-bar">
+      <nav className="tabs">
+        <button
+          className={`tab${view === "queue" ? " active" : ""}`}
+          onClick={() => setView("queue")}
+        >
+          Support queue
+          {queue.length > 0 && <span className="tab-count">{queue.length}</span>}
+        </button>
+        <button
+          className={`tab${view === "kb" ? " active" : ""}`}
+          onClick={() => setView("kb")}
+        >
+          Knowledge base
+        </button>
+      </nav>
+
+      {view === "queue" && (
+        <>
+          <div className="filter-bar">
         {FILTERS.map((f) => (
           <button
             key={f}
@@ -378,6 +493,95 @@ export default function Dashboard() {
                 : "Read-only: another agent owns this conversation."}
             </p>
           )}
+        </section>
+      )}
+        </>
+      )}
+
+      {view === "kb" && (
+        <section className="kb-panel">
+          <header>
+            <h2>Knowledge base</h2>
+            <span className="queue-count">{kbDocs.length} sources</span>
+            <button className="secondary" onClick={() => void loadKbRef.current()} disabled={kbBusy}>
+              Refresh
+            </button>
+          </header>
+
+          {kbError && <p className="notice error">{kbError}</p>}
+          {kbReport && <p className="notice ok">Ingest complete: {kbReport.summary}</p>}
+
+          <div className="kb-grid">
+            <form className="kb-card" onSubmit={uploadDocs}>
+              <h3>Upload documents</h3>
+              <p className="hint">Accepted: PDF or DOCX. Files are stored in data_sources/.</p>
+              <input ref={fileRef} type="file" multiple accept=".pdf,.docx" />
+              <label className="check">
+                <input type="checkbox" checked={embed} onChange={(e) => setEmbed(e.target.checked)} />
+                Embed for semantic search
+              </label>
+              <label className="check">
+                <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+                Re-ingest even if unchanged
+              </label>
+              <button type="submit" disabled={kbBusy}>
+                Upload &amp; ingest
+              </button>
+            </form>
+
+            <form className="kb-card" onSubmit={ingestUrls}>
+              <h3>Ingest from URLs</h3>
+              <p className="hint">One URL per line. The page text is scraped and chunked.</p>
+              <textarea
+                value={urlText}
+                onChange={(e) => setUrlText(e.target.value)}
+                placeholder={"https://www.kenya-airways.com/...\nhttps://..."}
+                rows={6}
+              />
+              <button type="submit" disabled={kbBusy || !urlText.trim()}>
+                Ingest URLs
+              </button>
+            </form>
+          </div>
+
+          <div className="kb-list">
+            {kbDocs.length === 0 && <p className="placeholder">No sources yet.</p>}
+            {kbDocs.map((doc) => (
+              <article key={doc.id} className="kb-item">
+                <header>
+                  <span className="badge">{doc.doc_type}</span>
+                  <strong>{doc.title}</strong>
+                  <time>added {formatDate(doc.created_at)}</time>
+                </header>
+                <p className="kb-meta">
+                  {doc.fragment_count ?? 0} chunks · {doc.source_url ?? "unknown source"}
+                </p>
+                <p className="kb-meta">last fetched {formatDate(doc.last_fetched)}</p>
+                <footer>
+                  <button
+                    className="secondary"
+                    disabled={kbBusy || !doc.source_url}
+                    onClick={() => doc.source_url && reingest(doc.source_url)}
+                  >
+                    Re-ingest
+                  </button>
+                  <button
+                    className="danger"
+                    disabled={kbBusy || !doc.source_url}
+                    onClick={() => removeSource(doc)}
+                  >
+                    Delete
+                  </button>
+                </footer>
+              </article>
+            ))}
+          </div>
+
+          <div className="kb-danger">
+            <button className="danger" onClick={resetKb} disabled={kbBusy || kbDocs.length === 0}>
+              Reset all knowledge
+            </button>
+          </div>
         </section>
       )}
     </main>

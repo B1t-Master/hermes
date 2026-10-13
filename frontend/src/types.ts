@@ -128,3 +128,22 @@ export function isServerFrame(data: unknown): data is ServerFrame {
     typeof (data as { type?: unknown }).type === "string"
   );
 }
+
+export interface KnowledgeDocument {
+  id: string;
+  source_url: string | null;
+  title: string;
+  doc_type: string;
+  content_hash: string;
+  last_fetched: string;
+  created_at: string;
+  fragment_count: number | null;
+}
+
+export interface IngestReport {
+  new: number;
+  updated: number;
+  unchanged: number;
+  failed: [string, string][];
+  summary: string;
+}

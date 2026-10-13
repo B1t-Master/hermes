@@ -701,6 +701,174 @@ button.claim:hover {
 }
 
 /* ================================================================== */
+/* Knowledge base tab                                                  */
+/* ================================================================== */
+
+.tabs {
+  display: flex;
+  gap: 0;
+  margin: 1rem 0 0;
+  border-bottom: var(--border);
+}
+
+.tab {
+  background: var(--white);
+  color: var(--black);
+  border: var(--border);
+  border-bottom: none;
+  box-shadow: none;
+  padding: 0.5rem 1rem;
+  margin-bottom: -3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tab:hover {
+  background: var(--gold);
+}
+
+.tab.active {
+  background: var(--red);
+  color: var(--white);
+}
+
+.tab-count {
+  background: var(--black);
+  color: var(--white);
+  padding: 0 0.4rem;
+  font-size: 0.7rem;
+}
+
+.kb-panel {
+  background: var(--white);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: 1.25rem;
+  margin-top: 1.25rem;
+}
+
+.kb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.kb-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: var(--bg);
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  padding: 1rem;
+}
+
+.kb-card h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  text-transform: uppercase;
+}
+
+.kb-card .hint,
+.kb-meta {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #4b5563;
+}
+
+.kb-card input[type="file"] {
+  padding: 0.4rem;
+  font-size: 0.85rem;
+  background: var(--white);
+}
+
+.kb-card .check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.kb-card .check input {
+  width: auto;
+}
+
+textarea {
+  padding: 0.7rem 0.85rem;
+  border: var(--border);
+  border-radius: 0;
+  background: var(--white);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  resize: vertical;
+}
+
+textarea:focus {
+  outline: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.kb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.kb-item {
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  padding: 0.75rem 1rem;
+}
+
+.kb-item header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.kb-item header time {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: #4b5563;
+  white-space: nowrap;
+}
+
+.kb-item .kb-meta {
+  margin-top: 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.kb-item footer {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.kb-item footer button {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.75rem;
+}
+
+button.danger {
+  background: var(--black);
+}
+
+button.danger:hover {
+  background: var(--red);
+}
+
+.kb-danger {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 2px dashed var(--black);
+}
+
+/* ================================================================== */
 /* Misc polish                                                         */
 /* ================================================================== */
 

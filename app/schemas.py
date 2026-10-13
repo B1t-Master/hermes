@@ -111,3 +111,28 @@ class TurnOut(BaseModel):
     intent: str | None = None
     sentiment_score: float | None = None
     sentiment_label: str | None = None
+
+
+class KnowledgeDocumentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    source_url: str | None
+    title: str
+    doc_type: str  # pdf | docx
+    content_hash: str
+    last_fetched: datetime
+    created_at: datetime
+    fragment_count: int | None = None
+
+
+class IngestReportOut(BaseModel):
+    new: int
+    updated: int
+    unchanged: int
+    failed: list[tuple[str, str]]
+    summary: str
+
+
+class UrlIngestIn(BaseModel):
+    urls: list[str] = Field(min_length=1)

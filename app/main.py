@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import agents, auth, chat, ws
+from app.api import agents, auth, chat, kb, ws
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -75,6 +75,7 @@ app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(agents.router)
 app.include_router(ws.router)
+app.include_router(kb.router)
 
 
 @app.get("/health")

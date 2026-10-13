@@ -2,6 +2,8 @@ import type {
   AgentInfo,
   Conversation,
   Escalation,
+  IngestReport,
+  KnowledgeDocument,
   Message,
   Passenger,
   QueueEscalation,
@@ -23,19 +25,28 @@ export class ApiError extends Error {
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
+  /** Multipart body; mutually exclusive with `body`. */
+  formData?: FormData;
   token?: string;
 }
 
 /** All backend routes are proxied under /api (vite strips the prefix). */
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
-  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+  let body: BodyInit | undefined;
+  if (opts.formData) {
+    // Let the browser set the multipart boundary.
+    body = opts.formData;
+  } else if (opts.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(opts.body);
+  }
   if (opts.token) headers["Authorization"] = `Bearer ${opts.token}`;
 
   const res = await fetch(`/api${path}`, {
     method: opts.method ?? "GET",
     headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    body,
   });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { detail?: string };
@@ -95,6 +106,31 @@ export const api = {
       method: "POST",
       token,
     }),
+
+  /* knowledge base (agent) */
+  kbList: (token: string) => request<KnowledgeDocument[]>("/kb/sources", { token }),
+  kbUpload: (token: string, files: File[], embed = true, force = false) => {
+    const form = new FormData();
+    for (const file of files) form.append("files", file);
+    return request<IngestReport>(
+      `/kb/upload?embed=${embed}&force=${force}`,
+      { method: "POST", token, formData: form },
+    );
+  },
+  kbIngestUrls: (token: string, urls: string[]) =>
+    request<IngestReport>("/kb/urls", { method: "POST", token, body: { urls } }),
+  kbReingest: (token: string, sourceKey: string) =>
+    request<IngestReport>(
+      `/kb/sources/${encodeURIComponent(sourceKey)}/reingest`,
+      { method: "POST", token },
+    ),
+  kbDelete: (token: string, sourceKey: string) =>
+    request<{ ok: boolean }>(`/kb/sources/${encodeURIComponent(sourceKey)}`, {
+      method: "DELETE",
+      token,
+    }),
+  kbReset: (token: string) =>
+    request<{ ok: boolean }>("/kb/reset", { method: "POST", token }),
 };
 
 export type { Role };
