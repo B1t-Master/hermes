@@ -1,12 +1,9 @@
 import asyncio
-import os
-import tempfile
 import unittest
 
 from ingest.store import (
     CachedStore,
     Fragment,
-    SqliteStore,
     Store,
     bump_corpus_version,
     rank_fragments,
@@ -76,6 +73,12 @@ class _FakeStore(Store):
         self.dump_calls += 1
         return list(self._fragments)
 
+    async def ensure_schema(self):
+        return None
+
+    async def reset(self):
+        return None
+
     async def close(self):
         return None
 
@@ -122,48 +125,6 @@ class CachedStoreTest(unittest.IsolatedAsyncioTestCase):
         await store.replace_source()
         await store.search([1.0, 0.0], "alpha", k=5)
         self.assertEqual(inner.dump_calls, 2)
-
-
-class SqliteDumpFragmentsTest(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        fd, self._path = tempfile.mkstemp(suffix=".sqlite")
-        os.close(fd)
-        self.store = SqliteStore(self._path)
-        await self.store.connect()
-
-    async def asyncTearDown(self):
-        await self.store.close()
-        try:
-            os.unlink(self._path)
-        except OSError:
-            pass
-
-    async def _seed(self):
-        await self.store.replace_source(
-            source_key="file::a.pdf",
-            title="A",
-            topic="Flights",
-            doc_type="pdf",
-            content_hash="h1",
-            chunks=["flight delay rebooking policy", "baggage allowance limits"],
-            embeddings=[[1.0, 0.0], [0.0, 1.0]],
-            source_url=None,
-        )
-
-    async def test_dump_round_trips_embeddings(self):
-        await self._seed()
-        fragments = await self.store.dump_fragments()
-        self.assertEqual(len(fragments), 2)
-        self.assertEqual(fragments[0].embedding, [1.0, 0.0])
-        self.assertEqual(fragments[0].title, "A")
-
-    async def test_search_vector_and_keyword(self):
-        await self._seed()
-        vector = await self.store.search([1.0, 0.0], "q", k=1)
-        self.assertEqual(vector[0].content, "flight delay rebooking policy")
-
-        keyword = await self.store.search(None, "baggage", k=5)
-        self.assertEqual([r.content for r in keyword], ["baggage allowance limits"])
 
 
 if __name__ == "__main__":

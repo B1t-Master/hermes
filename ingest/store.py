@@ -2,9 +2,8 @@ import asyncio
 import math
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Optional
 
 from app.config import settings
 

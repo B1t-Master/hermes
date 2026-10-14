@@ -13,7 +13,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    Uuid,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
