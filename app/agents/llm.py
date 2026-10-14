@@ -87,6 +87,56 @@ class LLM:
                 logger.warning("LLM attempt failed (%s): %s", model, exc)
         raise LLMError("; ".join(errors))
 
+    async def tool_message(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 1024,
+    ) -> dict:
+        """One completion that may return tool calls.
+
+        Returns a plain assistant message dict
+        (``{"role": "assistant", "content": str, "tool_calls": [...]}``), so
+        the caller can append it and feed tool results back.
+        """
+        chain = self._chain()
+        if not chain:
+            raise LLMError("No LLM provider configured (set GROQ_API_KEY or DEEPSEEK_API_KEY)")
+        errors: list[str] = []
+        for client, model in chain:
+            try:
+                response = await client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice="auto",
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                message = response.choices[0].message
+                tool_calls = [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.function.name,
+                            "arguments": call.function.arguments,
+                        },
+                    }
+                    for call in (message.tool_calls or [])
+                ]
+                return {
+                    "role": "assistant",
+                    "content": message.content or "",
+                    "tool_calls": tool_calls,
+                }
+            except Exception as exc:
+                errors.append(f"{model}: {type(exc).__name__} {exc}")
+                logger.warning("LLM tool attempt failed (%s): %s", model, exc)
+        raise LLMError("; ".join(errors))
+
     async def stream(
         self,
         messages: list[dict],

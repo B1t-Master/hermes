@@ -30,6 +30,7 @@ from app.agents.intent import classify_intent
 from app.agents.llm import LLMError, get_llm
 from app.agents.retriever import get_retriever
 from app.agents.sentiment import SentimentResult, get_sentiment_analyser
+from app.agents.tools import detect_rebook_request, run_tool_turn
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,20 @@ Answer only from the provided context. Rules:
 
 Context:
 {context}"""
+
+# Added to the system prompt when a rebooking request is detected, so the
+# model knows it may act with the tool instead of only quoting the context.
+REBOOK_TOOL_INSTRUCTION = """\
+
+The passenger is asking to rebook a disrupted flight. Call the `rebook_flight`
+tool with the flight number to perform the rebooking, then confirm the new
+flight details and the confirmation reference. Use the tool result; do not say
+you lack cancellation information when the tool provides it."""
+
+REBOOK_FALLBACK = (
+    "I'm sorry, I couldn't complete the rebooking just now. Please try again, "
+    "or I can connect you with a human agent."
+)
 
 
 class AgentState(TypedDict, total=False):
@@ -230,6 +245,9 @@ async def answer(state: AgentState, config=None) -> dict:
             "\n\nLive flight information from the flight service (mock data):\n"
             + flight_context
         )
+    rebook_request = detect_rebook_request(state.get("query", ""))
+    if rebook_request:
+        system += REBOOK_TOOL_INSTRUCTION
     messages = [
         {"role": "system", "content": system},
         *state.get("history", [])[-HISTORY_TURNS_FOR_CONTEXT:],
@@ -239,6 +257,18 @@ async def answer(state: AgentState, config=None) -> dict:
     on_token = None
     if config:
         on_token = config.get("configurable", {}).get("on_token")
+
+    # Rebooking asks run through LLM function calling: the model picks the
+    # rebook_flight tool and its arguments, then answers from the result. The
+    # plain path is skipped here because REBOOK_TOOL_INSTRUCTION tells the
+    # model to call a tool, which fails if no tools are offered.
+    if rebook_request:
+        try:
+            text = await run_tool_turn(messages, on_token=on_token)
+        except LLMError:
+            logger.warning("Rebook tool turn failed")
+            text = ""
+        return {"answer": text or REBOOK_FALLBACK}
 
     llm = get_llm()
     try:
