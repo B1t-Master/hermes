@@ -131,5 +131,5 @@ Produces HTML report at `eval/report.html`.
 
 ## Differentiation roadmap
 
-See `todo.md` for the sprint plan: rebook function calling, eval harness,
-Telegram adapter, agent assist drafts, voice widget, auto-translate.
+Shipped: rebooking via function calling, golden-set eval harness, Telegram
+adapter. Remaining: agent assist drafts, voice widget, auto-translate.

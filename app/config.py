@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     rebook_confirmation_email: str = "isaacmwanginjuguna@gmail.com"
     email_outbox_dir: str = ".mock_emails"
 
+    # --- Telegram channel (long polling) ---
+    # The adapter starts automatically when a token is present.
+    telegram_bot_token: str = ""
+    telegram_poll_timeout: int = 25
+    telegram_api_base: str = "https://api.telegram.org"
+
     @field_validator("database_url", mode="before")
     @classmethod
     def _force_asyncpg_driver(cls, value: object) -> object:
@@ -99,6 +105,11 @@ class Settings(BaseSettings):
     @property
     def is_llm_configured(self) -> bool:
         return bool(self.groq_api_key or self.deepseek_api_key)
+
+    @property
+    def telegram_enabled(self) -> bool:
+        """The adapter starts only when a bot token is configured."""
+        return bool(self.telegram_bot_token)
 
     @property
     def cors_origin_list(self) -> list[str]:

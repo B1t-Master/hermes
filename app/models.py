@@ -68,6 +68,12 @@ class Passenger(Base):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_anonymous: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Set for passengers that reach us through a channel other than the web
+    # chat (currently Telegram). The string form of the channel-side user id,
+    # unique so a repeat visitor maps to the same passenger and history.
+    telegram_chat_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="passenger")

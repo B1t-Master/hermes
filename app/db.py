@@ -69,3 +69,23 @@ async def init_models() -> None:
         ).scalar()
         if not has_sources:
             await conn.execute(text("ALTER TABLE messages ADD COLUMN sources JSON"))
+        # passengers.telegram_chat_id links a Telegram chat to a passenger.
+        # Same drift guard: create_all will not alter the pre-existing table.
+        has_telegram = (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM information_schema.columns "
+                    "WHERE table_name = 'passengers' AND column_name = 'telegram_chat_id'"
+                )
+            )
+        ).scalar()
+        if not has_telegram:
+            await conn.execute(
+                text("ALTER TABLE passengers ADD COLUMN telegram_chat_id VARCHAR(64)")
+            )
+            await conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_passengers_telegram_chat_id "
+                    "ON passengers (telegram_chat_id)"
+                )
+            )

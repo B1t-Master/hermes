@@ -47,6 +47,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from app.agents.hub import conversation_hub, dashboard_hub
+from app.agents.notify import notify_turn
 from app.agents.turns import get_conversation, message_to_dict, run_turn
 from app.db import SessionLocal
 from app.models import Agent, Escalation, EscalationStatus, Message, MessageSender
@@ -200,36 +201,16 @@ async def _handle_passenger_turn(ws: WebSocket, conversation_id: uuid.UUID, data
         return
 
     # Room events: agents watching see the passenger's (sentiment-tagged) turn
-    # and any bot answer; the sender dedupes by message id.
-    await conversation_hub.send(
-        conversation_id, _event("passenger_message", message=result["passenger_message"])
-    )
+    # and any bot answer; the sender dedupes by message id. Same fan-out the
+    # Telegram adapter uses, so an escalation lands on the dashboard either way.
+    await notify_turn(conversation_id, result)
 
     if result.get("escalate"):
-        # Only announce a genuinely new escalation. A reply in an already
-        # escalated conversation routes to the agent without re-escalating.
-        if result.get("escalation_created"):
-            await conversation_hub.send(
-                conversation_id,
-                _event("escalated", reason=result.get("escalation_reason") or ""),
-            )
-            escalation_id = await _latest_escalation_id(conversation_id)
-            await dashboard_hub.broadcast(
-                _event(
-                    "queue_update",
-                    action="created",
-                    escalation_id=escalation_id,
-                    conversation_id=str(conversation_id),
-                )
-            )
         # No bot answer on the escalation path; acknowledge the turn anyway.
         await ws.send_json(_event("bot_done", message=None))
         return
 
     if result.get("bot_message"):
-        await conversation_hub.send(
-            conversation_id, _event("bot_message", message=result["bot_message"])
-        )
         await ws.send_json(_event("bot_done", message=result["bot_message"]))
     else:
         await ws.send_json(_event("bot_error", detail="no answer generated"))
@@ -268,19 +249,6 @@ async def _handle_agent_message(
     await conversation_hub.send(
         conversation_id, _event("agent_message", message=message_to_dict(message))
     )
-
-
-async def _latest_escalation_id(conversation_id: uuid.UUID) -> str | None:
-    async with SessionLocal() as db:
-        escalation = (
-            await db.execute(
-                select(Escalation)
-                .where(Escalation.conversation_id == conversation_id)
-                .order_by(Escalation.created_at.desc())
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-    return str(escalation.id) if escalation else None
 
 
 # --------------------------------------------------------------------------

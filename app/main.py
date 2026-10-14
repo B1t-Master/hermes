@@ -13,6 +13,27 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _configure_logging() -> None:
+    """Make application logs visible on stdout.
+
+    Uvicorn configures loggers for its own namespace only; records from
+    ``app.*`` propagate to the root logger, which has no handler and falls
+    back to WARNING. That silently dropped every ``logger.info`` in the app
+    (including background components like the Telegram adapter). Give the
+    ``app`` package its own handler so operational logs actually appear.
+    """
+    app_logger = logging.getLogger("app")
+    if not app_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        app_logger.addHandler(handler)
+        app_logger.propagate = False
+    app_logger.setLevel(logging.INFO)
+
+
+_configure_logging()
+
+
 async def _warm_up() -> None:
     """Preload lazy singletons so the first passenger turn is responsive.
 
@@ -56,7 +77,17 @@ async def _warm_up() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await _warm_up()
-    yield
+    telegram = None
+    if settings.telegram_enabled:
+        from app.channels.telegram import get_telegram_channel
+
+        telegram = get_telegram_channel()
+        await telegram.start()
+    try:
+        yield
+    finally:
+        if telegram is not None:
+            await telegram.stop()
 
 
 app = FastAPI(
