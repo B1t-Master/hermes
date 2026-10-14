@@ -1,15 +1,17 @@
-{"id": "rebooking-free", "question": "Is the KQ Self Rebooking service free?", "expect_any": ["free"], "expect_escalate": false, "expect_cite": true}
+{"id": "rebooking-free", "question": "Is the KQ Self Rebooking service free?", "expect_any": ["free"], "expect_escalate": false, "expect_cite": true, "fast": true}
 {"id": "rebooking-what-needed", "question": "What do I need to rebook myself?", "expect_any": ["booking reference", "e-ticket", "ticket number"], "expect_escalate": false, "expect_cite": true}
 {"id": "rebooking-disrupted-only", "question": "Can I rebook a flight that has not been disrupted?", "expect_any": ["only", "schedule change", "delayed", "cancelled", "disrupted"], "expect_escalate": false, "expect_cite": true}
 {"id": "rebooking-window", "question": "How far in advance can I rebook with the self-rebooking tool?", "expect_any": ["7 days", "seven days", "72 hours", "24 hours"], "expect_escalate": false}
 {"id": "rebooking-auto", "question": "What happens if I do not rebook myself?", "expect_any": ["next available flight", "automatic", "email"], "expect_escalate": false, "expect_cite": true}
 {"id": "rebooking-bags", "question": "If I rebook, will my checked bags be transferred to the new flight?", "expect_any": ["transferred", "automatically"], "expect_escalate": false, "expect_cite": true}
 {"id": "rebooking-inbound", "question": "If my outbound flight changed, can I also change the inbound free of charge?", "expect_any": ["no", "travel agent", "contact center", "travel agency"], "expect_escalate": false, "expect_cite": true}
-{"id": "rebooking-refund", "question": "I no longer want to travel. How can I request a refund?", "expect_escalate": true}
+{"id": "rebooking-refund", "question": "I no longer want to travel. How can I request a refund?", "expect_escalate": true, "fast": true}
 {"id": "rebooking-award", "question": "Does the self-rebooking tool rebook award tickets?", "expect_any": ["award", "yes"], "expect_escalate": false}
 {"id": "rebooking-other-airlines", "question": "Can the tool rebook another airline's ticket that includes a KQ sector?", "expect_any": ["reissued", "revalidation", "yes"], "expect_escalate": false}
-{"id": "rebook-mock-tool", "question": "My flight KQ100 was cancelled. Please rebook me.", "expect_any": ["rebook", "reference"], "expect_escalate": false}
+{"id": "rebook-asks-ticket", "question": "My flight KQ100 was cancelled. Please rebook me.", "expect_any": ["booking reference", "e-ticket", "ticket number"], "expect_escalate": false}
+{"id": "rebook-confirms", "question": "My flight KQ100 was cancelled. My booking reference is 1234567890, please rebook me.", "expect_any": ["hrm-", "reference"], "expect_contains": ["email"], "expect_escalate": false}
+{"id": "rebook-full-flow", "question": "My flight KQ100 was cancelled, please rebook me.", "follow_ups": ["My booking reference is 1234567890."], "expect_any": ["hrm-", "reference"], "expect_contains": ["email"], "expect_escalate": false}
 {"id": "flight-status", "question": "What is the current status of flight KQ100?", "expect_any": ["kq100"], "expect_escalate": false}
-{"id": "escalate-human", "question": "Can I please speak to a human agent?", "expect_escalate": true}
-{"id": "escalate-safety", "question": "There is a medical emergency on board; a passenger is unconscious.", "expect_escalate": true}
+{"id": "escalate-human", "question": "Can I please speak to a human agent?", "expect_escalate": true, "fast": true}
+{"id": "escalate-safety", "question": "There is a medical emergency on board; a passenger is unconscious.", "expect_escalate": true, "fast": true}
 {"id": "out-of-scope", "question": "What is the capital of France?", "expect_any": ["human", "don't have", "do not have", "not able", "connect", "support", "agent"], "expect_escalate": false}

@@ -10,13 +10,16 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-# Models render numbers with non-breaking/narrow spaces ("7\u00a0days"); fold
-# every whitespace variant to a plain space so term matching is stable.
+# Models render numbers with non-breaking/narrow spaces ("7\u00a0days") and
+# references with non-breaking hyphens ("HRM\u2011ABC123"); fold both to their
+# ASCII equivalents so term matching is stable.
 _WHITESPACE = re.compile(r"[\s\u00a0\u202f]+")
+_DASHES = re.compile(r"[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]")
 
 
 def _normalize(text: str) -> str:
-    return _WHITESPACE.sub(" ", (text or "").lower()).strip()
+    folded = _DASHES.sub("-", text or "").lower()
+    return _WHITESPACE.sub(" ", folded).strip()
 
 
 @dataclass

@@ -57,6 +57,11 @@ class ScoreCaseTest(unittest.TestCase):
         result = score_case(case, answer="up to 7\u00a0days before", escalated=False, sources=[])
         self.assertTrue(result.passed)
 
+    def test_matches_across_non_breaking_hyphens(self):
+        case = {"id": "x", "question": "q", "expect_contains": ["hrm-abc123"]}
+        result = score_case(case, answer="reference HRM\u2011ABC123", escalated=False, sources=[])
+        self.assertTrue(result.passed)
+
 
 if __name__ == "__main__":
     unittest.main()
