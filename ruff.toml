@@ -1,4 +1,4 @@
-# Lint config for hermes. CI (phase 16) runs `ruff check app ingest tests`.
+# Lint config for hermes. CI runs `ruff check app ingest tests`.
 line-length = 100
 target-version = "py311"
 
