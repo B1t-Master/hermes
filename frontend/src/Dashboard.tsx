@@ -678,7 +678,6 @@ export default function Dashboard() {
         <section className="kb-panel">
           <header>
             <h2>Metrics</h2>
-            <span className="queue-count">{metrics?.turns ?? 0} recorded turns</span>
             <button
               className="secondary"
               onClick={() => void loadMetricsRef.current()}
@@ -693,16 +692,8 @@ export default function Dashboard() {
           {metrics ? (
             <div className="metrics-grid">
               <div className="metric-card">
-                <span className="metric-value">{metrics.turns}</span>
-                <span className="metric-label">Bot turns</span>
-              </div>
-              <div className="metric-card">
                 <span className="metric-value">{fmtMs(metrics.avg_response_ms)}</span>
                 <span className="metric-label">Avg response</span>
-              </div>
-              <div className="metric-card">
-                <span className="metric-value">{fmtMs(metrics.p95_response_ms)}</span>
-                <span className="metric-label">p95 response</span>
               </div>
               <div className="metric-card">
                 <span className="metric-value">

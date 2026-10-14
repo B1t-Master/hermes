@@ -108,9 +108,7 @@ class AgentOut(BaseModel):
 
 
 class MetricsOut(BaseModel):
-    turns: int
     avg_response_ms: float | None = None
-    p95_response_ms: float | None = None
     avg_retrieval_hits: float | None = None
     escalations: int
     csat_responses: int

@@ -149,9 +149,7 @@ export interface IngestReport {
 }
 
 export interface Metrics {
-  turns: number;
   avg_response_ms: number | null;
-  p95_response_ms: number | null;
   avg_retrieval_hits: number | null;
   escalations: number;
   csat_responses: number;

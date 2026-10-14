@@ -4,7 +4,7 @@ import uuid
 from fastapi.testclient import TestClient
 
 from app import metrics
-from app.api.agents import _mean, _p95
+from app.api.agents import _mean
 from app.main import app
 
 
@@ -52,11 +52,6 @@ class MetricStatsTest(unittest.TestCase):
     def test_mean_empty_and_values(self):
         self.assertIsNone(_mean([]))
         self.assertEqual(_mean([2, 4]), 3.0)
-
-    def test_p95(self):
-        self.assertIsNone(_p95([]))
-        self.assertEqual(_p95([7]), 7)
-        self.assertEqual(_p95(list(range(1, 101))), 95)
 
 
 class MetricsRouteTest(unittest.TestCase):

@@ -10,7 +10,6 @@ pending card can be inspected before claiming; *replying* requires the claim
 (checked on every message by the conversation WS).
 """
 
-import math
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -40,16 +39,6 @@ _STATUS_VALUES = ("active", "pending", "assigned", "resolved", "all")
 
 def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
-
-
-def _p95(values: list[float]) -> float | None:
-    """Nearest-rank 95th percentile."""
-    if not values:
-        return None
-    ordered = sorted(values)
-    rank = max(0, min(len(ordered) - 1, math.ceil(0.95 * len(ordered)) - 1))
-    return ordered[rank]
-
 
 
 async def _broadcast(escalation: Escalation, action: str) -> None:
@@ -270,9 +259,7 @@ async def metrics(
     ).scalar_one()
 
     return MetricsOut(
-        turns=len(response_rows),
         avg_response_ms=_mean(response_rows),
-        p95_response_ms=_p95(response_rows),
         avg_retrieval_hits=_mean(retrieval_rows),
         escalations=int(escalations),
         csat_responses=len(csat_rows),
