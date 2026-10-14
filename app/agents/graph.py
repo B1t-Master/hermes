@@ -65,15 +65,15 @@ Context:
 # model knows it may act with the tool instead of only quoting the context.
 REBOOK_TOOL_INSTRUCTION = """\
 
-The passenger is asking to rebook a disrupted flight. Call the `rebook_flight`
-tool with the flight number to perform the rebooking, then confirm the new
-flight details and the confirmation reference. Use the tool result; do not say
-you lack cancellation information when the tool provides it."""
-
-REBOOK_FALLBACK = (
-    "I'm sorry, I couldn't complete the rebooking just now. Please try again, "
-    "or I can connect you with a human agent."
-)
+The passenger wants to rebook a disrupted flight. A booking reference or
+e-ticket number is required:
+- If you do not have it yet, ask the passenger for it and do NOT call the tool
+  this turn.
+- Once you have it, call the `rebook_flight` tool with the flight number and
+  the booking reference.
+- After a successful rebooking, confirm the new flight details and the
+  confirmation reference, and tell the passenger that a confirmation has been
+  emailed to them."""
 
 
 class AgentState(TypedDict, total=False):
@@ -245,11 +245,12 @@ async def answer(state: AgentState, config=None) -> dict:
             "\n\nLive flight information from the flight service (mock data):\n"
             + flight_context
         )
-    rebook_request = detect_rebook_request(state.get("query", ""))
-    if rebook_request:
-        system += REBOOK_TOOL_INSTRUCTION
+    rebook_request = detect_rebook_request(state.get("query", ""), state.get("history"))
     messages = [
-        {"role": "system", "content": system},
+        {
+            "role": "system",
+            "content": system + (REBOOK_TOOL_INSTRUCTION if rebook_request else ""),
+        },
         *state.get("history", [])[-HISTORY_TURNS_FOR_CONTEXT:],
         {"role": "user", "content": state.get("query", "")},
     ]
@@ -258,17 +259,19 @@ async def answer(state: AgentState, config=None) -> dict:
     if config:
         on_token = config.get("configurable", {}).get("on_token")
 
-    # Rebooking asks run through LLM function calling: the model picks the
-    # rebook_flight tool and its arguments, then answers from the result. The
-    # plain path is skipped here because REBOOK_TOOL_INSTRUCTION tells the
-    # model to call a tool, which fails if no tools are offered.
+    # Rebooking asks run through LLM function calling: the model asks for the
+    # booking reference, calls rebook_flight, then answers from the result. If
+    # that fails, fall back to a plain answer with the tool instruction removed
+    # (offering tools is what makes the model attempt a call).
     if rebook_request:
         try:
             text = await run_tool_turn(messages, on_token=on_token)
         except LLMError:
-            logger.warning("Rebook tool turn failed")
+            logger.warning("Rebook tool turn failed; answering without tools")
             text = ""
-        return {"answer": text or REBOOK_FALLBACK}
+        if text:
+            return {"answer": text}
+        messages[0] = {"role": "system", "content": system}
 
     llm = get_llm()
     try:

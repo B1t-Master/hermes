@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     agent_username: str = "agent"
     agent_password: str = "change-me"
 
+    # --- Mock outputs (no real delivery/provider) ---
+    rebook_confirmation_email: str = "isaacmwanginjuguna@gmail.com"
+    email_outbox_dir: str = ".mock_emails"
+
     @field_validator("database_url", mode="before")
     @classmethod
     def _force_asyncpg_driver(cls, value: object) -> object:

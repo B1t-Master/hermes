@@ -5,8 +5,8 @@ the MCP server exposes (`services/flight_delays.py`, `services/rebook.py`), so
 the bot and external MCP clients share one source of truth.
 
 `run_tool_turn` drives the model/tool loop: the model may call tools, results
-are fed back as `tool` messages, and the final answer streams via `on_token`
-so the tool path keeps the same UX as the plain answer path.
+are fed back as `tool` messages, and the loop returns once the model replies
+with content instead of another tool call.
 """
 
 from __future__ import annotations
@@ -14,37 +14,61 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 
 from app.agents.llm import LLM, get_llm
-from services import flight_delays, rebook
+from app.config import settings
+from services import email, flight_delays, rebook
 
 logger = logging.getLogger(__name__)
 
 # Cap on tool-calling rounds before we ask once more for a plain answer.
 MAX_TOOL_ROUNDS = 2
 
-# Narrow phrases that mark a genuine "move me to another flight" request. Used
-# to decide whether to offer the rebook tool at all; the model still chooses
-# the tool and its arguments.
-REBOOK_KEYWORDS = (
-    "rebook",
-    "re-book",
-    "book me",
-    "change my flight",
-    "change the flight",
-    "move me to",
-    "move my flight",
-    "reschedule my flight",
-    "another flight",
-    "alternative flight",
-    "next flight",
-    "different flight",
+# Action phrases that mark a genuine "move me to another flight" request.
+# Purely informational questions ("is self-rebooking free?", "can I rebook a
+# disrupted flight?") must NOT match: the model should answer those from the
+# knowledge base, not act. The model still chooses the tool and its arguments.
+REBOOK_PATTERNS = (
+    r"\bre-?book me\b",
+    r"\bre-?book (?:my|our|the) (?:flight|booking|ticket|itinerary|reservation)\b",
+    r"\b(?:please|can you|could you|would you) re-?book\b",
+    r"(?<!do )\bi (?:want|need|would like|'d like) to re-?book\b",
+    r"\bchange (?:my|our|the) (?:flight|booking|ticket|itinerary|reservation)\b",
+    r"\bmove (?:me|us|my flight) to\b",
+    r"\breschedule (?:my|our|the) flight\b",
+    r"\b(?:another|alternative|different) flight\b",
+    r"\bnext available flight\b",
 )
+_REBOOK_RE = re.compile("|".join(REBOOK_PATTERNS), re.IGNORECASE)
+
+# A follow-up turn that supplies the booking reference the rebooking needs.
+_TICKET_HINT = re.compile(r"\b(ticket|booking|reference|pnr|e-?ticket)\b", re.IGNORECASE)
+_TICKET_NUMBER = re.compile(r"\b\d{6,14}\b")
 
 
-def detect_rebook_request(query: str) -> bool:
-    lower = query.lower()
-    return any(keyword in lower for keyword in REBOOK_KEYWORDS)
+def _has_rebook_intent(text: str) -> bool:
+    return bool(_REBOOK_RE.search(text))
+
+
+def _looks_like_ticket(text: str) -> bool:
+    return bool(_TICKET_HINT.search(text) or _TICKET_NUMBER.search(text))
+
+
+def detect_rebook_request(query: str, history: list[dict] | None = None) -> bool:
+    """Whether to offer the rebook tools on this turn.
+
+    True for a direct rebook ask, or when the passenger is answering our
+    request for a booking reference right after a rebook ask (so the multi-turn
+    flow keeps the tools available). Unrelated follow-ups stay on the plain
+    path.
+    """
+    if _has_rebook_intent(query):
+        return True
+    if not (history and _looks_like_ticket(query)):
+        return False
+    recent_user = [m.get("content", "") for m in history[-4:] if m.get("role") == "user"]
+    return any(_has_rebook_intent(text) for text in recent_user)
 
 
 TOOL_SPECS = [
@@ -102,7 +126,9 @@ TOOL_SPECS = [
             "description": (
                 "Rebook a passenger whose flight was cancelled or rescheduled "
                 "onto the same flight number on a new date (default: the next "
-                "day). Returns a confirmation reference and the new flight details."
+                "day). Requires the passenger's booking reference or e-ticket "
+                "number. Emails a confirmation. Returns the new flight details "
+                "and a confirmation reference."
             ),
             "parameters": {
                 "type": "object",
@@ -110,6 +136,14 @@ TOOL_SPECS = [
                     "flight_no": {
                         "type": "string",
                         "description": 'The disrupted flight number, such as "KQ100".',
+                    },
+                    "ticket_number": {
+                        "type": "string",
+                        "description": (
+                            "The passenger's booking reference or e-ticket number. "
+                            "If the passenger has not provided it yet, ask for it "
+                            "first instead of calling this tool."
+                        ),
                     },
                     "new_date": {
                         "type": "string",
@@ -124,7 +158,7 @@ TOOL_SPECS = [
                         "description": "Why the flight is being rebooked (delay, cancellation, schedule change).",
                     },
                 },
-                "required": ["flight_no"],
+                "required": ["flight_no", "ticket_number"],
             },
         },
     },
@@ -134,6 +168,28 @@ TOOL_SPECS = [
 def _canonical_name(name: str) -> str:
     """Drop any namespace prefix gpt-oss invents (e.g. ``repo_browser.rebook_flight``)."""
     return name.rsplit(".", 1)[-1].strip()
+
+
+def _rebook(arguments: dict) -> dict:
+    result = rebook.rebook_flight(
+        arguments.get("flight_no", ""),
+        ticket_number=arguments.get("ticket_number"),
+        new_date=arguments.get("new_date"),
+        passenger_name=arguments.get("passenger_name"),
+        reason=arguments.get("reason"),
+    )
+    if result.get("rebooked"):
+        subject, body = rebook.confirmation_email(result)
+        record = email.send_email(
+            settings.rebook_confirmation_email,
+            subject,
+            body,
+            outbox_dir=settings.email_outbox_dir,
+        )
+        result["email_sent"] = True
+        result["email_to"] = settings.rebook_confirmation_email
+        result["email_sent_at"] = record["sent_at"]
+    return result
 
 
 def _run_tool(name: str, arguments: dict) -> dict:
@@ -149,12 +205,7 @@ def _run_tool(name: str, arguments: dict) -> dict:
             )
         }
     if name == "rebook_flight":
-        return rebook.rebook_flight(
-            arguments.get("flight_no", ""),
-            arguments.get("new_date"),
-            arguments.get("passenger_name"),
-            arguments.get("reason"),
-        )
+        return _rebook(arguments)
     return {"error": f"unknown tool: {name}"}
 
 

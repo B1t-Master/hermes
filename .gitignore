@@ -39,6 +39,7 @@ data_sources/*.tmp
 .flights.sqlite
 .demo.sqlite
 session-*.md
+.mock_emails/
 
 # Capstone document (project reference only, not part of the codebase)
 /IsaacNjuguna_169647_EOlang*.docx
