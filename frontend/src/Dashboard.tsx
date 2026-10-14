@@ -11,6 +11,7 @@ import type {
   IngestReport,
   KnowledgeDocument,
   Message,
+  Metrics,
   QueueEscalation,
   ServerFrame,
 } from "./types";
@@ -20,13 +21,28 @@ import type { WsHandle, WsStatus } from "./ws";
 type Filter = "active" | "pending" | "assigned" | "resolved" | "all";
 const FILTERS: Filter[] = ["active", "pending", "assigned", "resolved", "all"];
 
-type View = "queue" | "kb";
+type View = "queue" | "kb" | "metrics";
 
 function age(iso: string): string {
   const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   return `${Math.round(mins / 60)}h ago`;
+}
+
+const DASH = "-";
+
+function fmtMs(value: number | null): string {
+  if (value === null) return DASH;
+  return value >= 1000 ? `${(value / 1000).toFixed(2)}s` : `${Math.round(value)}ms`;
+}
+
+function fmtDecimal(value: number | null): string {
+  return value === null ? DASH : value.toFixed(1);
+}
+
+function fmtCsat(value: number | null): string {
+  return value === null ? DASH : `${value.toFixed(1)}/5`;
 }
 
 export default function Dashboard() {
@@ -57,9 +73,11 @@ export default function Dashboard() {
   const [view, setView] = useState<View>("queue");
   /** Panels mount lazily, then stay mounted so tab switches are instant. */
   const [kbMounted, setKbMounted] = useState(false);
+  const [metricsMounted, setMetricsMounted] = useState(false);
   const showView = (next: View) => {
     setView(next);
     if (next === "kb") setKbMounted(true);
+    if (next === "metrics") setMetricsMounted(true);
   };
   const [kbDocs, setKbDocs] = useState<KnowledgeDocument[]>([]);
   const [kbReport, setKbReport] = useState<IngestReport | null>(null);
@@ -103,6 +121,30 @@ export default function Dashboard() {
   useEffect(() => {
     if (token) void loadKbRef.current();
   }, [token]);
+
+  /* ---- metrics tab --------------------------------------------------------- */
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [metricsBusy, setMetricsBusy] = useState(false);
+
+  const loadMetrics = async () => {
+    if (!token) return;
+    setMetricsBusy(true);
+    try {
+      setMetrics(await api.metrics(token));
+      setMetricsError(null);
+    } catch (err) {
+      setMetricsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMetricsBusy(false);
+    }
+  };
+  const loadMetricsRef = useRef(loadMetrics);
+  loadMetricsRef.current = loadMetrics;
+
+  useEffect(() => {
+    if (view === "metrics") void loadMetricsRef.current();
+  }, [view]);
 
   /** Run a KB mutation, surface its ingest report, then refresh the list. */
   const runKb = async (fn: () => Promise<IngestReport | { ok: boolean } | void>) => {
@@ -400,6 +442,12 @@ export default function Dashboard() {
         >
           Knowledge base
         </button>
+        <button
+          className={`tab${view === "metrics" ? " active" : ""}`}
+          onClick={() => showView("metrics")}
+        >
+          Metrics
+        </button>
       </nav>
 
       <div className="tab-panel" hidden={view !== "queue"}>
@@ -621,6 +669,61 @@ export default function Dashboard() {
               Reset all knowledge
             </button>
           </div>
+        </section>
+        </div>
+      )}
+
+      {metricsMounted && (
+        <div className="tab-panel" hidden={view !== "metrics"}>
+        <section className="kb-panel">
+          <header>
+            <h2>Metrics</h2>
+            <span className="queue-count">{metrics?.turns ?? 0} recorded turns</span>
+            <button
+              className="secondary"
+              onClick={() => void loadMetricsRef.current()}
+              disabled={metricsBusy}
+            >
+              Refresh
+            </button>
+          </header>
+
+          {metricsError && <p className="notice error">{metricsError}</p>}
+
+          {metrics ? (
+            <div className="metrics-grid">
+              <div className="metric-card">
+                <span className="metric-value">{metrics.turns}</span>
+                <span className="metric-label">Bot turns</span>
+              </div>
+              <div className="metric-card">
+                <span className="metric-value">{fmtMs(metrics.avg_response_ms)}</span>
+                <span className="metric-label">Avg response</span>
+              </div>
+              <div className="metric-card">
+                <span className="metric-value">{fmtMs(metrics.p95_response_ms)}</span>
+                <span className="metric-label">p95 response</span>
+              </div>
+              <div className="metric-card">
+                <span className="metric-value">
+                  {fmtDecimal(metrics.avg_retrieval_hits)}
+                </span>
+                <span className="metric-label">Chunks per turn</span>
+              </div>
+              <div className="metric-card">
+                <span className="metric-value">{metrics.escalations}</span>
+                <span className="metric-label">Escalations</span>
+              </div>
+              <div className="metric-card">
+                <span className="metric-value">{fmtCsat(metrics.avg_csat)}</span>
+                <span className="metric-label">
+                  CSAT ({metrics.csat_responses} rated)
+                </span>
+              </div>
+            </div>
+          ) : (
+            <p className="placeholder">No metrics recorded yet.</p>
+          )}
         </section>
         </div>
       )}

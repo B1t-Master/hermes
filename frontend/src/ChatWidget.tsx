@@ -30,6 +30,7 @@ export default function ChatWidget() {
   const agentAnnouncedRef = useRef(false);
   /** Current conversation id, read by stale-socket frame handlers. */
   const activeIdRef = useRef<string | null>(null);
+  const [csat, setCsat] = useState<Record<string, number>>({});
 
   const showToast = (text: string) => {
     setToast(text);
@@ -239,6 +240,16 @@ export default function ChatWidget() {
     }
   };
 
+  const rateActive = async (rating: number) => {
+    if (!token || !activeId) return;
+    try {
+      await api.csat(token, activeId, rating);
+      setCsat((prev) => ({ ...prev, [activeId]: rating }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   return (
     <main className="chat">
       <header>
@@ -288,6 +299,31 @@ export default function ChatWidget() {
             </p>
           )}
           {error && <p className="notice error">{error}</p>}
+
+          {resolved && activeId && (
+            <div className="csat">
+              {csat[activeId] ? (
+                <p className="placeholder">Thanks for the feedback: {csat[activeId]}/5.</p>
+              ) : (
+                <>
+                  <p>How did we do?</p>
+                  <div className="stars">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        className="star"
+                        aria-label={`${n} star${n > 1 ? "s" : ""}`}
+                        onClick={() => rateActive(n)}
+                      >
+                        ★
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="chat-body" ref={scrollRef}>
             {messages.length === 0 && streaming === null && !botThinking && (

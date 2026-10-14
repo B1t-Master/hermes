@@ -11,12 +11,14 @@ history. The tradeoff: a crash mid-graph loses that one inbound message.
 
 import logging
 import re
+import time
 import uuid
 
 from sqlalchemy import select, update
 
 from app.agents.graph import get_graph
 from app.db import SessionLocal
+from app.metrics import ESCALATION, RESPONSE_TIME_MS, RETRIEVAL_HITS, add_metric
 from app.models import Conversation, ConversationStatus, Message, MessageSender
 
 logger = logging.getLogger(__name__)
@@ -160,10 +162,13 @@ async def run_turn(
         "conversation_turn_count": conversation.turn_count,
     }
     config = {"configurable": {"on_token": on_token}} if on_token is not None else None
+    started = time.perf_counter()
     result = await get_graph().ainvoke(state, config=config)
+    response_time_ms = (time.perf_counter() - started) * 1000.0
     result = dict(result)
 
     escalated = bool(result.get("escalate"))
+    chunks = result.get("chunks") or []
     answer = strip_source_section(strip_source_urls(result.get("answer", "")))
     result["answer"] = answer
 
@@ -185,6 +190,10 @@ async def run_turn(
                 sources=citations_from_chunks(result.get("chunks") or []),
             )
             db.add(bot_message)
+        add_metric(db, conversation_id, RESPONSE_TIME_MS, response_time_ms)
+        add_metric(db, conversation_id, RETRIEVAL_HITS, len(chunks))
+        if escalated:
+            add_metric(db, conversation_id, ESCALATION, 1.0)
         # Increment the counter in-place; avoids a select-then-update.
         await db.execute(
             update(Conversation)

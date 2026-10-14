@@ -5,6 +5,7 @@ import type {
   IngestReport,
   KnowledgeDocument,
   Message,
+  Metrics,
   Passenger,
   QueueEscalation,
   Role,
@@ -52,6 +53,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     const data = (await res.json().catch(() => ({}))) as { detail?: string };
     throw new ApiError(res.status, data.detail || res.statusText);
   }
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -85,10 +87,19 @@ export const api = {
       token,
       body: { conversation_id: conversationId, content },
     }),
+  /* end-of-conversation star rating (1..5) */
+  csat: (token: string, conversationId: string, rating: number) =>
+    request<void>(`/chat/conversations/${conversationId}/csat`, {
+      method: "POST",
+      token,
+      body: { rating },
+    }),
 
   /* escalation queue (agent) */
   queue: (token: string, status = "active") =>
     request<QueueEscalation[]>(`/agents/escalations?status=${status}`, { token }),
+  /* aggregated performance metrics (agent) */
+  metrics: (token: string) => request<Metrics>("/agents/metrics", { token }),
   escalationMessages: (token: string, escalationId: string) =>
     request<Message[]>(`/agents/escalations/${escalationId}/messages`, { token }),
   claim: (token: string, escalationId: string) =>

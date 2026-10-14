@@ -47,6 +47,12 @@ class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
 
 
+class CSATIn(BaseModel):
+    """End-of-conversation star rating."""
+
+    rating: int = Field(ge=1, le=5)
+
+
 class MessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -99,6 +105,16 @@ class AgentOut(BaseModel):
     id: uuid.UUID
     name: str
     email: str
+
+
+class MetricsOut(BaseModel):
+    turns: int
+    avg_response_ms: float | None = None
+    p95_response_ms: float | None = None
+    avg_retrieval_hits: float | None = None
+    escalations: int
+    csat_responses: int
+    avg_csat: float | None = None
 
 
 class TurnOut(BaseModel):

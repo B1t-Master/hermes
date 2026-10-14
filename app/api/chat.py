@@ -1,14 +1,21 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.turns import run_turn
 from app.db import get_db
 from app.deps import get_current_passenger
-from app.models import Conversation, ConversationStatus, Message, Passenger
-from app.schemas import ConversationOut, MessageIn, MessageOut, TurnOut
+from app.metrics import CSAT, add_metric
+from app.models import (
+    Conversation,
+    ConversationStatus,
+    Message,
+    Passenger,
+    PerformanceMetric,
+)
+from app.schemas import ConversationOut, CSATIn, MessageIn, MessageOut, TurnOut
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -81,6 +88,25 @@ async def send_message(
         sentiment_score=result.get("sentiment_score"),
         sentiment_label=result.get("sentiment_label"),
     )
+
+
+@router.post("/conversations/{conversation_id}/csat", status_code=204)
+async def rate_conversation(
+    conversation_id: uuid.UUID,
+    payload: CSATIn,
+    passenger: Passenger = Depends(get_current_passenger),
+    db: AsyncSession = Depends(get_db),
+):
+    """End-of-conversation star rating (1..5). Resubmission replaces the value."""
+    conversation = await _get_owned_conversation(db, conversation_id, passenger.id)
+    await db.execute(
+        delete(PerformanceMetric).where(
+            PerformanceMetric.conversation_id == conversation.id,
+            PerformanceMetric.metric == CSAT,
+        )
+    )
+    add_metric(db, conversation.id, CSAT, payload.rating)
+    await db.commit()
 
 
 async def _get_owned_conversation(

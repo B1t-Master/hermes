@@ -319,6 +319,46 @@ button:disabled {
   color: var(--black);
 }
 
+/* End-of-conversation CSAT (passenger chat) */
+
+.csat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--white);
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.csat p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.csat .stars {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.csat .star {
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0.15rem 0.3rem;
+  background: var(--white);
+  color: var(--gold);
+  border: 2px solid var(--black);
+  box-shadow: 2px 2px 0 var(--black);
+  cursor: pointer;
+}
+
+.csat .star:hover {
+  background: var(--black);
+}
+
 /* ================================================================== */
 /* Layout: chat workspace (sidebar + thread) + auth extras            */
 /* ================================================================== */
@@ -805,6 +845,36 @@ button.claim:hover {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1rem;
   margin: 1rem 0;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: var(--bg);
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  padding: 1rem;
+}
+
+.metric-card .metric-value {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  color: var(--red);
+}
+
+.metric-card .metric-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .kb-card {

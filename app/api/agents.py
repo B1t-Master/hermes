@@ -10,15 +10,17 @@ pending card can be inspected before claiming; *replying* requires the claim
 (checked on every message by the conversation WS).
 """
 
+import math
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.hub import dashboard_hub
 from app.db import get_db
 from app.deps import get_current_agent
+from app.metrics import CSAT, ESCALATION, RESPONSE_TIME_MS, RETRIEVAL_HITS
 from app.models import (
     Agent,
     Conversation,
@@ -27,12 +29,27 @@ from app.models import (
     EscalationStatus,
     Message,
     Passenger,
+    PerformanceMetric,
 )
-from app.schemas import EscalationOut, MessageOut, QueueEscalationOut
+from app.schemas import EscalationOut, MessageOut, MetricsOut, QueueEscalationOut
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 _STATUS_VALUES = ("active", "pending", "assigned", "resolved", "all")
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _p95(values: list[float]) -> float | None:
+    """Nearest-rank 95th percentile."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = max(0, min(len(ordered) - 1, math.ceil(0.95 * len(ordered)) - 1))
+    return ordered[rank]
+
 
 
 async def _broadcast(escalation: Escalation, action: str) -> None:
@@ -227,3 +244,37 @@ async def resolve_escalation(
     )
     await _broadcast(escalation, "resolved")
     return escalation
+
+
+@router.get("/metrics", response_model=MetricsOut)
+async def metrics(
+    _: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Aggregated turn/queue metrics for the dashboard Metrics tab."""
+    pm = PerformanceMetric
+
+    response_rows = (
+        await db.execute(select(pm.value).where(pm.metric == RESPONSE_TIME_MS))
+    ).scalars().all()
+    retrieval_rows = (
+        await db.execute(select(pm.value).where(pm.metric == RETRIEVAL_HITS))
+    ).scalars().all()
+    csat_rows = (
+        await db.execute(select(pm.value).where(pm.metric == CSAT))
+    ).scalars().all()
+    escalations = (
+        await db.execute(
+            select(func.count()).select_from(pm).where(pm.metric == ESCALATION)
+        )
+    ).scalar_one()
+
+    return MetricsOut(
+        turns=len(response_rows),
+        avg_response_ms=_mean(response_rows),
+        p95_response_ms=_p95(response_rows),
+        avg_retrieval_hits=_mean(retrieval_rows),
+        escalations=int(escalations),
+        csat_responses=len(csat_rows),
+        avg_csat=_mean(csat_rows),
+    )
