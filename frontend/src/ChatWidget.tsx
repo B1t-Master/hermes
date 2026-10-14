@@ -10,6 +10,9 @@ import type { Conversation, Message, ServerFrame } from "./types";
 import { connectWs } from "./ws";
 import type { WsHandle, WsStatus } from "./ws";
 
+/** Show the rating prompt this long into the session, resolved or not. */
+const CSAT_PROMPT_DELAY_MS = 20_000;
+
 export default function ChatWidget() {
   const { token, role, logout } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -31,6 +34,14 @@ export default function ChatWidget() {
   /** Current conversation id, read by stale-socket frame handlers. */
   const activeIdRef = useRef<string | null>(null);
   const [csat, setCsat] = useState<Record<string, number>>({});
+  const [hoverRating, setHoverRating] = useState(0);
+  const [showCsat, setShowCsat] = useState(false);
+
+  /* Prompt for a rating 20s into the session, resolved or not. */
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowCsat(true), CSAT_PROMPT_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const showToast = (text: string) => {
     setToast(text);
@@ -300,25 +311,30 @@ export default function ChatWidget() {
           )}
           {error && <p className="notice error">{error}</p>}
 
-          {resolved && activeId && (
+          {activeId && (resolved || showCsat) && (
             <div className="csat">
               {csat[activeId] ? (
                 <p className="placeholder">Thanks for the feedback: {csat[activeId]}/5.</p>
               ) : (
                 <>
                   <p>How did we do?</p>
-                  <div className="stars">
+                  <div className="stars" onMouseLeave={() => setHoverRating(0)}>
                     {[1, 2, 3, 4, 5].map((n) => (
                       <button
                         key={n}
                         type="button"
-                        className="star"
+                        className={`star${n <= hoverRating ? " on" : ""}`}
                         aria-label={`${n} star${n > 1 ? "s" : ""}`}
+                        onMouseEnter={() => setHoverRating(n)}
+                        onFocus={() => setHoverRating(n)}
                         onClick={() => rateActive(n)}
                       >
                         ★
                       </button>
                     ))}
+                    {hoverRating > 0 && (
+                      <span className="csat-hover">{hoverRating}/5</span>
+                    )}
                   </div>
                 </>
               )}

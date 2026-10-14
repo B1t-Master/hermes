@@ -341,6 +341,7 @@ button:disabled {
 
 .csat .stars {
   display: flex;
+  align-items: center;
   gap: 0.25rem;
 }
 
@@ -349,14 +350,21 @@ button:disabled {
   line-height: 1;
   padding: 0.15rem 0.3rem;
   background: var(--white);
-  color: var(--gold);
+  color: #cfcfcf;
   border: 2px solid var(--black);
   box-shadow: 2px 2px 0 var(--black);
   cursor: pointer;
 }
 
-.csat .star:hover {
+.csat .star.on {
   background: var(--black);
+  color: var(--gold);
+}
+
+.csat .csat-hover {
+  margin-left: 0.4rem;
+  font-weight: 700;
+  font-size: 0.85rem;
 }
 
 /* ================================================================== */
