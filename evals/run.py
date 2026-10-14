@@ -163,7 +163,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--concurrency", type=int, default=4, help="Max cases in flight at once."
     )
     parser.add_argument("--limit", type=int, default=0, help="Evaluate only the first N cases.")
-    parser.add_argument("--timeout", type=float, default=120.0)
+    parser.add_argument("--timeout", type=float, default=180.0)
     return parser.parse_args(argv)
 
 

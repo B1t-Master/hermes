@@ -36,12 +36,23 @@ class Settings(BaseSettings):
     deepseek_model: str = "deepseek-chat"
     llm_timeout_seconds: float = 5.0
     llm_max_retries: int = 3
+    # gpt-oss reasoning models: "low" cuts latency a lot on short support
+    # answers. Empty string leaves the provider default untouched.
+    llm_reasoning_effort: str = ""
+    llm_max_answer_tokens: int = 512
 
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     sentiment_model: str = "cardiffnlp/twitter-roberta-base-sentiment-latest"
     sentiment_escalation_threshold: float = -0.75
     sentiment_escalation_consecutive_turns: int = 2
     max_loop_turns: int = 3
+
+    # --- Retrieval size (prompt token budget) ---
+    # Lower k / a per-chunk cap shrink each request's prompt. Helpful on
+    # providers with a low tokens-per-minute quota; higher values give the
+    # model more to cite.
+    retriever_k: int = 5
+    context_max_chars: int = 0  # 0 disables the per-chunk cap
 
     agent_username: str = "agent"
     agent_password: str = "change-me"

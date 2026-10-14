@@ -59,6 +59,16 @@ class LLM:
             self._chain_cache = self._build_chain()
         return self._chain_cache
 
+    def _provider_kwargs(self, model: str) -> dict:
+        """Extra request params for a model family.
+
+        gpt-oss on Groq accepts ``reasoning_effort``; sending it only for the
+        ``openai/`` models keeps other providers (DeepSeek) working.
+        """
+        if settings.llm_reasoning_effort and model.startswith("openai/"):
+            return {"reasoning_effort": settings.llm_reasoning_effort}
+        return {}
+
     async def complete(
         self,
         messages: list[dict],
@@ -77,6 +87,7 @@ class LLM:
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    **self._provider_kwargs(model),
                 )
                 content = response.choices[0].message.content
                 if content:
@@ -114,6 +125,7 @@ class LLM:
                     tool_choice="auto",
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    **self._provider_kwargs(model),
                 )
                 message = response.choices[0].message
                 tool_calls = [
@@ -157,6 +169,7 @@ class LLM:
                     temperature=temperature,
                     max_tokens=max_tokens,
                     stream=True,
+                    **self._provider_kwargs(model),
                 )
                 async for chunk in stream:
                     delta = chunk.choices[0].delta.content if chunk.choices else None

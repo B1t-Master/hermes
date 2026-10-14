@@ -198,11 +198,15 @@ async def retrieve(state: AgentState) -> dict:
 
 
 def _format_context(chunks: list[dict]) -> tuple[str, str]:
+    cap = settings.context_max_chars
     parts, titles = [], []
     for i, chunk in enumerate(chunks, 1):
         title = chunk.get("title") or chunk.get("source_url") or f"source {i}"
         titles.append(title)
-        parts.append(f"[{i}] {title}\n{chunk.get('content', '')}")
+        content = chunk.get("content", "")
+        if cap and len(content) > cap:
+            content = content[:cap].rstrip() + "…"
+        parts.append(f"[{i}] {title}\n{content}")
     return "\n\n".join(parts), ", ".join(dict.fromkeys(titles)) or "none"
 
 
@@ -277,12 +281,12 @@ async def answer(state: AgentState, config=None) -> dict:
     try:
         if on_token is not None:
             parts: list[str] = []
-            async for token in llm.stream(messages, max_tokens=1024):
+            async for token in llm.stream(messages, max_tokens=settings.llm_max_answer_tokens):
                 parts.append(token)
                 await on_token(token)
             text = "".join(parts)
         else:
-            text = await llm.complete(messages, max_tokens=1024)
+            text = await llm.complete(messages, max_tokens=settings.llm_max_answer_tokens)
     except LLMError as exc:
         logger.error("QA generation failed: %s", exc)
         text = "I'm sorry, I couldn't process that just now. Please try again, or I can connect you with a human agent."

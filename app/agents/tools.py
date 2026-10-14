@@ -247,7 +247,9 @@ async def run_tool_turn(
     working = list(messages)
 
     for _ in range(max_rounds):
-        message = await llm.tool_message(working, specs)
+        message = await llm.tool_message(
+            working, specs, max_tokens=settings.llm_max_answer_tokens
+        )
         tool_calls = message.get("tool_calls") or []
         if not tool_calls:
             content = message.get("content") or ""
@@ -270,7 +272,9 @@ async def run_tool_turn(
             )
 
     # Still calling tools after the budget: ask once more and take whatever it says.
-    message = await llm.tool_message(working, specs)
+    message = await llm.tool_message(
+        working, specs, max_tokens=settings.llm_max_answer_tokens
+    )
     content = message.get("content") or ""
     if on_token is not None and content:
         await on_token(content)

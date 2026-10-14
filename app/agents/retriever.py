@@ -8,6 +8,7 @@ keyword-overlap search instead of crashing the answer path.
 import asyncio
 import logging
 
+from app.config import settings
 from ingest.embedder import Embedder
 from ingest.store import RetrievedChunk, get_store
 
@@ -15,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 class Retriever:
-    def __init__(self, k: int = 5):
-        self.k = k
+    def __init__(self, k: int | None = None):
+        self.k = settings.retriever_k if k is None else k
         self._store = None
         self._embedder: Embedder | None = None
 
