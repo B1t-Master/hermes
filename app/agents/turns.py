@@ -144,6 +144,7 @@ async def run_turn(
             await db.refresh(message)
         return {
             "escalate": True,
+            "escalation_created": False,
             "escalation_reason": conversation.escalation_reason or "",
             "passenger_message": message_to_dict(message),
             "bot_message": None,
@@ -168,6 +169,7 @@ async def run_turn(
     result = dict(result)
 
     escalated = bool(result.get("escalate"))
+    escalation_created = bool(result.get("escalation_created"))
     chunks = result.get("chunks") or []
     answer = strip_source_section(strip_source_urls(result.get("answer", "")))
     result["answer"] = answer
@@ -192,7 +194,7 @@ async def run_turn(
             db.add(bot_message)
         add_metric(db, conversation_id, RESPONSE_TIME_MS, response_time_ms)
         add_metric(db, conversation_id, RETRIEVAL_HITS, len(chunks))
-        if escalated:
+        if escalation_created:
             add_metric(db, conversation_id, ESCALATION, 1.0)
         # Increment the counter in-place; avoids a select-then-update.
         await db.execute(

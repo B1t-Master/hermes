@@ -206,19 +206,22 @@ async def _handle_passenger_turn(ws: WebSocket, conversation_id: uuid.UUID, data
     )
 
     if result.get("escalate"):
-        await conversation_hub.send(
-            conversation_id,
-            _event("escalated", reason=result.get("escalation_reason") or ""),
-        )
-        escalation_id = await _latest_escalation_id(conversation_id)
-        await dashboard_hub.broadcast(
-            _event(
-                "queue_update",
-                action="created",
-                escalation_id=escalation_id,
-                conversation_id=str(conversation_id),
+        # Only announce a genuinely new escalation. A reply in an already
+        # escalated conversation routes to the agent without re-escalating.
+        if result.get("escalation_created"):
+            await conversation_hub.send(
+                conversation_id,
+                _event("escalated", reason=result.get("escalation_reason") or ""),
             )
-        )
+            escalation_id = await _latest_escalation_id(conversation_id)
+            await dashboard_hub.broadcast(
+                _event(
+                    "queue_update",
+                    action="created",
+                    escalation_id=escalation_id,
+                    conversation_id=str(conversation_id),
+                )
+            )
         # No bot answer on the escalation path; acknowledge the turn anyway.
         await ws.send_json(_event("bot_done", message=None))
         return

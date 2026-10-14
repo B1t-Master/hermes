@@ -74,6 +74,7 @@ class AgentState(TypedDict, total=False):
     intent_source: str
     escalate: bool
     escalation_reason: str
+    escalation_created: bool
     chunks: list[dict]  # RetrievedChunk as plain dicts
     flight_context: str  # rendered mock flight status/delays, when relevant
     answer: str
@@ -306,7 +307,8 @@ async def escalate(state: AgentState) -> dict:
             )
         ).scalar_one_or_none()
 
-        if already_open is None:
+        created = already_open is None
+        if created:
             db.add(
                 Escalation(
                     conversation_id=conv_uuid,
@@ -318,7 +320,7 @@ async def escalate(state: AgentState) -> dict:
         conversation.escalation_reason = state.get("escalation_reason", "")
         await db.commit()
 
-    return {"escalate": True}
+    return {"escalate": True, "escalation_created": created}
 
 
 def _should_escalate(state: AgentState) -> str:
