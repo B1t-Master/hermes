@@ -16,9 +16,13 @@ import json
 import logging
 import re
 
+from sqlalchemy import func, select
+
 from app.agents.llm import LLM, get_llm
 from app.config import settings
-from services import email, flight_delays, rebook
+from app.db import SessionLocal
+from app.models import RebookEmailMap
+from services import email_real, flight_delays, rebook
 
 logger = logging.getLogger(__name__)
 
@@ -171,25 +175,58 @@ def _canonical_name(name: str) -> str:
 
 
 def _rebook(arguments: dict) -> dict:
-    result = rebook.rebook_flight(
+    return rebook.rebook_flight(
         arguments.get("flight_no", ""),
         ticket_number=arguments.get("ticket_number"),
         new_date=arguments.get("new_date"),
         passenger_name=arguments.get("passenger_name"),
         reason=arguments.get("reason"),
     )
-    if result.get("rebooked"):
-        subject, body = rebook.confirmation_email(result)
-        record = email.send_email(
-            settings.rebook_confirmation_email,
+
+
+async def _lookup_ticket_email(ticket_number: str | None) -> str | None:
+    """Destination email for a ticket, or None when it is not on file."""
+    ticket = (ticket_number or "").strip()
+    if not ticket:
+        return None
+    async with SessionLocal() as db:
+        row = (
+            await db.execute(
+                select(RebookEmailMap).where(
+                    func.upper(RebookEmailMap.ticket_number) == ticket.upper()
+                )
+            )
+        ).scalar_one_or_none()
+    return row.email if row else None
+
+
+async def _send_rebook_confirmation(result: dict) -> None:
+    """Email the confirmation and annotate ``result`` with delivery details.
+
+    A mapping row overrides the destination; otherwise the default
+    REBOOK_CONFIRMATION_EMAIL is used. Delivery problems are swallowed — the
+    rebooking already succeeded, and the passenger's answer must not fail.
+    """
+    to = await _lookup_ticket_email(result.get("ticket_number"))
+    to = to or settings.rebook_confirmation_email
+    subject, body = rebook.confirmation_email(result)
+    try:
+        record = await asyncio.to_thread(
+            email_real.send_email,
+            to,
             subject,
             body,
+            sender=settings.resend_from_email,
+            api_key=settings.resend_api_key,
             outbox_dir=settings.email_outbox_dir,
         )
-        result["email_sent"] = True
-        result["email_to"] = settings.rebook_confirmation_email
-        result["email_sent_at"] = record["sent_at"]
-    return result
+    except Exception:
+        logger.exception("Rebook confirmation email failed for %s", result.get("reference"))
+        return
+    result["email_sent"] = True
+    result["email_to"] = to
+    result["email_provider"] = record.get("provider")
+    result["email_sent_at"] = record.get("sent_at")
 
 
 def _run_tool(name: str, arguments: dict) -> dict:
@@ -211,11 +248,15 @@ def _run_tool(name: str, arguments: dict) -> dict:
 
 async def call_tool(name: str, arguments: dict) -> dict:
     """Execute one tool off the event loop (the mock services are sync/SQLite)."""
+    name = _canonical_name(name)
     try:
-        return await asyncio.to_thread(_run_tool, name, arguments)
+        result = await asyncio.to_thread(_run_tool, name, arguments)
     except Exception as exc:
         logger.exception("Tool %s failed", name)
         return {"error": f"{type(exc).__name__}: {exc}"}
+    if name == "rebook_flight" and result.get("rebooked"):
+        await _send_rebook_confirmation(result)
+    return result
 
 
 def _parse_arguments(raw: str | None) -> dict:

@@ -47,3 +47,6 @@ lxml_html_clean==0.2.0
 # langsmith unpinned: langchain-core 0.3.x requires langsmith<0.3, so let the
 # resolver pick a compatible version instead of hard-conflicting like 0.3.4 did
 ragas==0.2.12
+
+# --- Email delivery (Resend) ---
+resend==2.49.1

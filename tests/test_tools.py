@@ -60,20 +60,52 @@ class CallToolTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["rebooked"])
         self.assertTrue(result["needs_ticket"])
 
-    async def test_rebook_emails_confirmation(self):
-        fake = {"sent_at": "2025-03-01T00:00:00+00:00", "path": "/tmp/x"}
-        with mock.patch.object(tools.email, "send_email", return_value=fake) as send:
+    async def test_rebook_emails_mapped_address(self):
+        fake = {"sent_at": "2025-03-01T00:00:00+00:00", "provider": "resend", "id": "abc"}
+        with (
+            mock.patch.object(tools, "_lookup_ticket_email", return_value="pax@example.com"),
+            mock.patch.object(tools.email_real, "send_email", return_value=fake) as send,
+        ):
             result = await tools.call_tool(
                 "rebook_flight", {"flight_no": "KQ100", "ticket_number": TICKET}
             )
         self.assertTrue(result["rebooked"])
         self.assertTrue(result["email_sent"])
-        self.assertEqual(result["email_to"], settings.rebook_confirmation_email)
+        self.assertEqual(result["email_to"], "pax@example.com")
+        self.assertEqual(result["email_provider"], "resend")
         send.assert_called_once()
-        self.assertEqual(send.call_args.args[0], settings.rebook_confirmation_email)
+        self.assertEqual(send.call_args.args[0], "pax@example.com")
+
+    async def test_rebook_falls_back_to_default_email(self):
+        fake = {"sent_at": "t", "provider": "resend"}
+        with (
+            mock.patch.object(tools, "_lookup_ticket_email", return_value=None),
+            mock.patch.object(tools.email_real, "send_email", return_value=fake),
+        ):
+            result = await tools.call_tool(
+                "rebook_flight", {"flight_no": "KQ100", "ticket_number": TICKET}
+            )
+        self.assertTrue(result["email_sent"])
+        self.assertEqual(result["email_to"], settings.rebook_confirmation_email)
+
+    async def test_failed_email_does_not_break_rebook(self):
+        with (
+            mock.patch.object(tools, "_lookup_ticket_email", return_value=None),
+            mock.patch.object(tools.email_real, "send_email", side_effect=RuntimeError("boom")),
+        ):
+            result = await tools.call_tool(
+                "rebook_flight", {"flight_no": "KQ100", "ticket_number": TICKET}
+            )
+        self.assertTrue(result["rebooked"])
+        self.assertNotIn("email_sent", result)
 
     async def test_namespaced_tool_name_is_recovered(self):
-        with mock.patch.object(tools.email, "send_email", return_value={"sent_at": "t"}):
+        with (
+            mock.patch.object(tools, "_lookup_ticket_email", return_value=None),
+            mock.patch.object(
+                tools.email_real, "send_email", return_value={"sent_at": "t", "provider": "resend"}
+            ),
+        ):
             result = await tools.call_tool(
                 "repo_browser.rebook_flight",
                 {"flight_no": "KQ100", "ticket_number": TICKET},
@@ -129,7 +161,12 @@ class RunToolTurnTest(unittest.IsolatedAsyncioTestCase):
         async def on_token(token):
             tokens.append(token)
 
-        with mock.patch.object(tools.email, "send_email", return_value={"sent_at": "t"}):
+        with (
+            mock.patch.object(tools, "_lookup_ticket_email", return_value=None),
+            mock.patch.object(
+                tools.email_real, "send_email", return_value={"sent_at": "t", "provider": "resend"}
+            ),
+        ):
             answer = await tools.run_tool_turn(
                 [{"role": "user", "content": "rebook KQ100"}], llm=fake, on_token=on_token
             )

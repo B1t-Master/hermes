@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     rebook_confirmation_email: str = "isaacmwanginjuguna@gmail.com"
     email_outbox_dir: str = ".mock_emails"
 
+    # --- Email delivery (Resend) ---
+    # With no API key the sender falls back to the mock outbox, so local runs
+    # and tests need no credentials.
+    resend_api_key: str = ""
+    resend_from_email: str = "onboarding@resend.dev"
+
     # --- Telegram channel (long polling) ---
     # The adapter starts automatically when a token is present.
     telegram_bot_token: str = ""

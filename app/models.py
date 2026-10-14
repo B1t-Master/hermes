@@ -200,3 +200,18 @@ class PerformanceMetric(Base):
     metric: Mapped[str] = mapped_column(String(32))  # response_time_ms | csat | aht_s
     value: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RebookEmailMap(Base):
+    """Ticket / booking reference -> destination email for confirmations.
+
+    Seeded with prototype rows; a match routes the rebooking confirmation to
+    that address, otherwise the default in ``REBOOK_CONFIRMATION_EMAIL`` is
+    used. Stands in for a real loyalty-profile / contact store.
+    """
+
+    __tablename__ = "rebook_email_map"
+
+    ticket_number: Mapped[str] = mapped_column(String(20), primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

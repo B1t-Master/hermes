@@ -89,3 +89,15 @@ async def init_models() -> None:
                     "ON passengers (telegram_chat_id)"
                 )
             )
+        # Ticket -> confirmation email. Seeded with prototype rows; ON CONFLICT
+        # keeps this idempotent and never clobbers rows added later.
+        seed_email = settings.rebook_confirmation_email
+        for ticket in ("HRM-9B4770", "KQ-123456", "1234567890", "TEST-0001"):
+            await conn.execute(
+                text(
+                    "INSERT INTO rebook_email_map (ticket_number, email) "
+                    "VALUES (:ticket, :email) "
+                    "ON CONFLICT (ticket_number) DO NOTHING"
+                ),
+                {"ticket": ticket, "email": seed_email},
+            )
