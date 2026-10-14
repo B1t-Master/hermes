@@ -40,11 +40,9 @@ def _parse_source_key(key: str) -> tuple[str, str | None]:
 
 @router.get("/sources", response_model=list[KnowledgeDocumentOut])
 async def list_sources(agent: Agent = Depends(get_current_agent)):
-    # Read through the ingest store (pgvector or local SQLite) so the list,
-    # uploads and retrieval always agree on one corpus.
-    from ingest.store import resolve_store
+    from ingest.store import get_store
 
-    store = await resolve_store("auto")
+    store = get_store()
     try:
         documents = await store.list_documents()
     finally:
@@ -65,7 +63,7 @@ async def upload_files(
     from ingest.embedder import Embedder
     from ingest.pipeline import ingest_sources
     from ingest.sources import Source
-    from ingest.store import resolve_store
+    from ingest.store import get_store
 
     data_dir = Path("data_sources")
     data_dir.mkdir(exist_ok=True)
@@ -103,7 +101,7 @@ async def upload_files(
             )
         )
 
-    store = await resolve_store("auto")
+    store = get_store()
     embedder = Embedder() if embed else None
     try:
         await store.ensure_schema()
@@ -136,7 +134,7 @@ async def ingest_urls(
     from ingest.embedder import Embedder
     from ingest.pipeline import ingest_sources
     from ingest.sources import Source, _title_from_url
-    from ingest.store import resolve_store
+    from ingest.store import get_store
 
     sources: list[Source] = []
     for url in payload.urls:
@@ -151,7 +149,7 @@ async def ingest_urls(
             )
         )
 
-    store = await resolve_store("auto")
+    store = get_store()
     embedder = Embedder() if embed else None
     try:
         await store.ensure_schema()
@@ -183,7 +181,7 @@ async def reingest_source(
     from ingest.embedder import Embedder
     from ingest.pipeline import ingest_sources
     from ingest.sources import Source, _title_from_url
-    from ingest.store import resolve_store
+    from ingest.store import get_store
 
     kind, rest = _parse_source_key(source_key)
     sources: list[Source] = []
@@ -209,7 +207,7 @@ async def reingest_source(
     else:
         raise HTTPException(status_code=400, detail="Invalid source key")
 
-    store = await resolve_store("auto")
+    store = get_store()
     embedder = Embedder() if embed else None
     try:
         await store.ensure_schema()
@@ -237,9 +235,9 @@ async def delete_source(
     source_key: str,
     agent: Agent = Depends(get_current_agent),
 ):
-    from ingest.store import resolve_store
+    from ingest.store import get_store
 
-    store = await resolve_store("auto")
+    store = get_store()
     try:
         found = await store.delete_source(source_key)
     finally:
@@ -264,9 +262,9 @@ async def delete_source(
 async def reset_kb(
     agent: Agent = Depends(get_current_agent),
 ):
-    from ingest.store import resolve_store
+    from ingest.store import get_store
 
-    store = await resolve_store("auto")
+    store = get_store()
     try:
         await store.reset()
     finally:

@@ -19,20 +19,17 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.config import settings
 from app.db import Base
 
 
 def _uuid_type():
-    """Postgres backend: native UUID column. SQLite demo backend: the generic
-    SQLAlchemy Uuid (stored as CHAR(32)), so the same models work locally."""
-    return Uuid(as_uuid=True) if settings.is_sqlite_backend else PG_UUID(as_uuid=True)
+    """Postgres backend: native UUID column."""
+    return PG_UUID(as_uuid=True)
 
 
 def _vector_type():
-    """Postgres backend: pgvector column. SQLite demo backend: embeddings live
-    in the separate local SqliteStore, so the app-side column is a JSON list."""
-    return Vector(384) if not settings.is_sqlite_backend else JSON
+    """Postgres backend: pgvector column."""
+    return Vector(384)
 
 
 class ConversationStatus(str, enum.Enum):

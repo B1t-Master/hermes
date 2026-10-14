@@ -1,9 +1,11 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api import agents, auth, chat, kb, ws
 from app.config import settings
@@ -65,7 +67,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -81,3 +83,12 @@ app.include_router(kb.router)
 @app.get("/health")
 async def health():
     return {"status": "ok", "app": settings.app_name}
+
+
+# Serve the built frontend from the same origin when present (production image).
+# The frontend calls /api and opens WebSockets against location.host, so a
+# single origin removes CORS and WS-proxy concerns. API/WS routes registered
+# above win; this mount is the last-resort catch-all.
+_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if (_dist / "index.html").is_file():
+    app.mount("/", StaticFiles(directory=str(_dist), html=True), name="frontend")

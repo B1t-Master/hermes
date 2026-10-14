@@ -4,10 +4,9 @@ Only sources whose raw content changed are re-chunked / re-embedded; unchanged
 sources are left untouched. Local PDFs refresh by simply re-running this script
 after a file update (there is no watcher or cron yet).
 
-Examples
---------
-    python -m ingest.refresh --store sqlite
-    python -m ingest.refresh --store pg --embed
+Example
+-------
+    python -m ingest.refresh --embed
 """
 
 import argparse
@@ -16,7 +15,7 @@ import asyncio
 from ingest.embedder import Embedder
 from ingest.pipeline import ingest_sources
 from ingest.sources import discover_all
-from ingest.store import resolve_store
+from ingest.store import get_store
 
 
 async def refresh(options: argparse.Namespace) -> int:
@@ -25,7 +24,7 @@ async def refresh(options: argparse.Namespace) -> int:
         print("No sources found.")
         return 1
 
-    store = await resolve_store(options.store)
+    store = get_store()
     embedder = Embedder() if options.embed else None
 
     try:
@@ -43,7 +42,6 @@ async def refresh(options: argparse.Namespace) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Refresh changed knowledge sources")
-    parser.add_argument("--store", choices=["auto", "pg", "sqlite"], default="auto")
     parser.add_argument("--embed", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--reset", action="store_true")

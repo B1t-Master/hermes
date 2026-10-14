@@ -9,7 +9,7 @@ import asyncio
 import logging
 
 from ingest.embedder import Embedder
-from ingest.store import RetrievedChunk, resolve_store
+from ingest.store import RetrievedChunk, get_store
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class Retriever:
 
     async def _get_store(self):
         if self._store is None:
-            self._store = await resolve_store("auto")
+            self._store = get_store()
         return self._store
 
     def _get_embedder(self) -> Embedder:
@@ -60,7 +60,7 @@ class Retriever:
         fresh server does not stall on one-time initialization.
 
         Runner's note: on a cold server the first WS turn used to sit on
-        \"thinking\" for 10-30s while sentence-transformers loaded. Call this
+        "thinking" for 10-30s while sentence-transformers loaded. Call this
         from the app lifespan; failures are logged, never fatal, because the
         lazy paths retry on demand anyway.
         """

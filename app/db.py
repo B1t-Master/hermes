@@ -9,11 +9,21 @@ class Base(DeclarativeBase):
     pass
 
 
-# SQL echo is off by default: with DEBUG=true it buries real output. Opt in
-# with SQL_ECHO=true when debugging queries.
-engine = create_async_engine(settings.database_url, echo=settings.sql_echo, pool_pre_ping=True)
+def _engine_kwargs() -> dict:
+    """Engine options for Postgres (asyncpg)."""
+    return {
+        "echo": settings.sql_echo,
+        "pool_pre_ping": settings.db_pool_pre_ping,
+        "pool_size": settings.db_pool_size,
+        "max_overflow": settings.db_max_overflow,
+        "pool_recycle": settings.db_pool_recycle,
+    }
 
-SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+engine = create_async_engine(settings.database_url, **_engine_kwargs())
+
+SessionLocal = async_sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def get_db():
@@ -24,26 +34,15 @@ async def get_db():
 async def init_models() -> None:
     """Create schema / tables.
 
-    Postgres (default): runs 'CREATE EXTENSION IF NOT EXISTS vector;'
-    automatically so a manual Neon step is not required, plus guards for
-    schema drift on tables that predate the current model set.
-    SQLite demo backend: plain create_all (the local SqliteStore builds its
-    own retrieval schema separately).
+    Runs 'CREATE EXTENSION IF NOT EXISTS vector;' automatically so a
+    manual Neon step is not required, plus guards for schema drift on
+    tables that predate the current model set.
     """
     import app.models  # noqa: F401  (register models on Base)
 
     async with engine.begin() as conn:
-        if not settings.is_sqlite_backend:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
-        if settings.is_sqlite_backend:
-            return
-        # Schema drift guard: tables created before Phase 2 (or hand-made in the
-        # Neon SQL editor) made knowledge_fragments.embedding NOT NULL. Embeddings
-        # are optional until the ML stack is installed, so drop the constraint.
-        # Check first: executing DDL needlessly invalidates asyncpg's
-        # prepared-statement cache and can kill a query running later in the
-        # same process (InvalidCachedStatementError).
         nullable = (
             await conn.execute(
                 text(
@@ -54,12 +53,12 @@ async def init_models() -> None:
         ).scalar()
         if nullable == "NO":
             await conn.execute(
-                text("ALTER TABLE knowledge_fragments ALTER COLUMN embedding DROP NOT NULL")
+                text(
+                    "ALTER TABLE knowledge_fragments ALTER COLUMN embedding DROP NOT NULL")
             )
         # Message citations: `messages.sources` was added after the table first
-        # existed on Neon. create_all does not alter existing tables, so add the
-        # column explicitly. Guarded by the information_schema probe: running
-        # DDL needlessly invalidates asyncpg's prepared-statement cache.
+        # existed. create_all does not alter existing tables, so add the
+        # column explicitly.
         has_sources = (
             await conn.execute(
                 text(

@@ -74,7 +74,7 @@ class KBIntegrationTest(unittest.TestCase):
         report = IngestReport()
         report.new = 1
         with (
-            patch("ingest.store.resolve_store", new=AsyncMock(return_value=_FakeStore())),
+            patch("ingest.store.get_store", new=AsyncMock(return_value=_FakeStore())),
             patch("ingest.pipeline.ingest_sources", new=AsyncMock(return_value=report)) as ingest,
         ):
             resp = self.client.post(

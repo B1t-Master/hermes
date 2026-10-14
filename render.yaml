@@ -1,0 +1,42 @@
+# Render Blueprint. Deploy with: Render Dashboard -> New -> Blueprint -> pick
+# this repo. Secrets marked `sync: false` are entered once in the dashboard.
+#
+# One service serves the API, the WebSockets and the built frontend from the
+# same origin, so there is no cross-origin CORS/WS-proxy setup.
+services:
+  - type: web
+    name: hermes
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Co-locate with Neon (eu-central-1) so backend -> DB is a local hop.
+    region: frankfurt
+    # The container loads torch + two models; 512 MB (free/starter) will OOM.
+    plan: standard # 2 GB RAM; lower only after verifying memory headroom
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      # Neon POOLED connection string, in asyncpg form:
+      #   postgresql+asyncpg://USER:PASSWORD@ep-xxx-pooler.<region>.aws.neon.tech/neondb?ssl=require
+      # (note +asyncpg and ssl=require; drop sslmode=/channel_binding=)
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      # Retrieval store: auto -> pgvector (since DATABASE_URL is Postgres).
+      - key: INGEST_STORE
+        value: auto
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: AGENT_USERNAME
+        value: agent
+      - key: AGENT_PASSWORD
+        sync: false
+      # Only needed if you later serve the frontend from a different origin.
+      - key: CORS_ORIGINS
+        sync: false

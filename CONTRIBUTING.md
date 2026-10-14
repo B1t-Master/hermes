@@ -15,18 +15,26 @@ Thanks for helping build the hermes Q&A harness for Kenya Airways support.
 
    `uv` works too: `uv venv --python 3.11 && uv pip install -r requirements.txt`
 
-3. Copy `.env.example` to `.env` and fill in `DATABASE_URL` (Neon) and
-   `GROQ_API_KEY`. Never commit `.env`.
-4. Frontend:
+3. **Local Postgres with pgvector** (required):
+   ```bash
+   # Ubuntu 24.04+
+   sudo apt-get update && sudo apt-get install -y postgresql postgresql-16-pgvector
+   sudo -u postgres psql -c "CREATE DATABASE hermes;"
+   sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+   ```
 
+4. Copy `.env.example` to `.env` and fill in `GROQ_API_KEY` (or `DEEPSEEK_API_KEY`).
+   `DATABASE_URL` defaults to `postgresql+asyncpg://postgres:postgres@localhost:5432/hermes`.
+   Never commit `.env`.
+
+5. Frontend:
    ```bash
    cd frontend
    npm install
    npm run dev
    ```
 
-5. Ingest data:
-
+6. Ingest data:
    ```bash
    python -m ingest.run --embed
    ```

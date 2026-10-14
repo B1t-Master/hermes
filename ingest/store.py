@@ -1,46 +1,32 @@
-import json
+import asyncio
 import math
-import re
-import uuid
+import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Optional
 
 from app.config import settings
 
-LOCAL_SQLITE_PATH = ".hermes_store.sqlite"
+# In-process signal that the stored corpus changed. CachedStore compares its
+# loaded version against this so a KB mutation is visible on the very next
+# search without a network round trip per turn.
+_corpus_version = 0
 
 
-def _parse_datetime(value: str | None) -> datetime:
-    """Best-effort ISO parse for SQLite text timestamps; now() on failure."""
-    if value:
-        try:
-            return datetime.fromisoformat(value)
-        except ValueError:
-            pass
-    return datetime.now(UTC)
+def bump_corpus_version() -> None:
+    """Mark the corpus as changed; in-process caches reload on next search."""
+    global _corpus_version
+    _corpus_version += 1
 
 
-@dataclass
-class RetrievedChunk:
-    """One search hit, shaped for the QA agent's context window."""
-
-    content: str
-    source_url: str | None
-    title: str | None
-    topic: str | None
-    chunk_index: int
-    score: float  # cosine similarity in [0, 1]; keyword mode: query-term overlap ratio
-
-    @property
-    def citation(self) -> str:
-        """Short human-readable attribution for answer footnotes."""
-        label = self.title or self.source_url or "unknown source"
-        return f"[{label}]" if self.source_url is None else f"[{label}] ({self.source_url})"
+def corpus_version() -> int:
+    return _corpus_version
 
 
 def keyword_terms(query: str) -> list[str]:
     """Distinct meaningful terms from a query, for the no-embedding fallback."""
+    import re
     return sorted({t for t in re.findall(r"\w+", query.lower()) if len(t) > 2})
 
 
@@ -64,6 +50,73 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
+@dataclass
+class RetrievedChunk:
+    """One search hit, shaped for the QA agent's context window."""
+
+    content: str
+    source_url: str | None
+    title: str | None
+    topic: str | None
+    chunk_index: int
+    score: float  # cosine similarity in [0, 1]; keyword mode: query-term overlap ratio
+
+    @property
+    def citation(self) -> str:
+        """Short human-readable attribution for answer footnotes."""
+        label = self.title or self.source_url or "unknown source"
+        return f"[{label}]" if self.source_url is None else f"[{label}] ({self.source_url})"
+
+
+@dataclass
+class Fragment:
+    """One stored chunk, decoupled from any backend, for in-process ranking."""
+
+    content: str
+    source_url: str | None
+    title: str | None
+    topic: str | None
+    chunk_index: int
+    embedding: list[float] | None
+
+
+def rank_fragments(
+    fragments: list[Fragment],
+    query_embedding: list[float] | None,
+    query_text: str,
+    k: int = 5,
+) -> list[RetrievedChunk]:
+    """Score `fragments` against the query and return the top-k.
+
+    Vector mode when `query_embedding` is given; otherwise keyword-overlap
+    fallback. Shared by the stores and the in-process cache so every path ranks
+    identically.
+    """
+    terms = None if query_embedding is not None else keyword_terms(query_text)
+    results: list[RetrievedChunk] = []
+    for fragment in fragments:
+        if query_embedding is not None:
+            if not fragment.embedding:
+                continue  # unembedded chunk can't be cosine-ranked
+            score = cosine_similarity(query_embedding, fragment.embedding)
+        else:
+            score = keyword_score(fragment.content, terms or [])
+            if score <= 0:
+                continue
+        results.append(
+            RetrievedChunk(
+                content=fragment.content,
+                source_url=fragment.source_url,
+                title=fragment.title,
+                topic=fragment.topic,
+                chunk_index=fragment.chunk_index,
+                score=score,
+            )
+        )
+    results.sort(key=lambda chunk: chunk.score, reverse=True)
+    return results[:k]
+
+
 class Store(ABC):
     @abstractmethod
     async def get_hash(self, source_key: str) -> str | None: ...
@@ -83,12 +136,15 @@ class Store(ABC):
     async def delete_source(self, source_key: str) -> bool:
         """Delete a document and its fragments; False when it did not exist."""
 
-    async def ensure_schema(self) -> None:  # noqa: B027 - intentional default
-        """Create/verify tables & extension. No-op by default (SqliteStore
-        builds its schema in connect())."""
+    @abstractmethod
+    async def dump_fragments(self) -> list[Fragment]:
+        """Every stored chunk with its embedding, for an in-process index."""
 
-    async def reset(self) -> None:  # noqa: B027 - intentional default
-        """Drop stored knowledge content (not part of default flow; --reset flag)."""
+    @abstractmethod
+    async def ensure_schema(self) -> None: ...
+
+    @abstractmethod
+    async def reset(self) -> None: ...
 
     @abstractmethod
     async def close(self) -> None: ...
@@ -105,7 +161,7 @@ class Store(ABC):
 
 
 class PgVectorStore(Store):
-    """PostgreSQL + pgvector backend (production path).
+    """PostgreSQL + pgvector backend.
 
     Reuses the app ORM (app.models) and the async engine from app.db.
     `source_key` is stored in the knowledge_documents.source_url column
@@ -162,8 +218,6 @@ class PgVectorStore(Store):
             existing = result.scalar_one_or_none()
             if existing is not None:
                 await session.delete(existing)
-                # Flush the DELETE before inserting: the new row carries the
-                # same content_hash and that column is UNIQUE.
                 await session.flush()
                 status = "updated"
             else:
@@ -236,9 +290,36 @@ class PgVectorStore(Store):
             ).scalar_one_or_none()
             if doc is None:
                 return False
-            await session.delete(doc)  # fragments cascade via the relationship
+            await session.delete(doc)
             await session.commit()
         return True
+
+    async def dump_fragments(self) -> list[Fragment]:
+        from sqlalchemy import select
+
+        frag = self._KnowledgeFragment
+        doc = self._KnowledgeDocument
+        stmt = select(
+            frag.content,
+            frag.source_url,
+            frag.topic,
+            frag.chunk_index,
+            frag.embedding,
+            doc.title,
+        ).join(doc, doc.id == frag.document_id)
+        async with self._SessionLocal() as session:
+            rows = (await session.execute(stmt)).all()
+        return [
+            Fragment(
+                content=content,
+                source_url=source_url,
+                title=title,
+                topic=topic,
+                chunk_index=chunk_index,
+                embedding=[float(x) for x in embedding] if embedding is not None else None,
+            )
+            for content, source_url, topic, chunk_index, embedding, title in rows
+        ]
 
     async def search(
         self, query_embedding: list[float] | None, query_text: str, k: int = 5
@@ -305,192 +386,86 @@ class PgVectorStore(Store):
         await self._engine.dispose()
 
 
-class SqliteStore(Store):
-    """Local SQLite stand-in for development when the Neon endpoint is
-    unreachable (e.g. networks that block outbound :5432). Never used in
-    production; embeddings are stored as JSON so vector search is computed
-    in-process during Phase 4 retrievals."""
+class CachedStore(Store):
+    """Wraps PgVectorStore and serves ``search`` from an in-process index.
 
-    def __init__(self, path: str = LOCAL_SQLITE_PATH):
-        self._path = path
-        self._db = None
+    The corpus is small and changes rarely, so loading every embedded chunk
+    once and ranking in-process removes a network round trip from every turn.
+    Staleness is detected via the process-wide corpus version (bumped by KB
+    mutations) plus an optional TTL, so out-of-band edits self-heal.
+    """
 
-    async def connect(self) -> None:
-        import aiosqlite
+    def __init__(self, inner: PgVectorStore, ttl_seconds: float = 300.0):
+        self._inner = inner
+        self._ttl = ttl_seconds
+        self._fragments: list[Fragment] | None = None
+        self._loaded_at = 0.0
+        self._loaded_version = -1
+        self._lock = asyncio.Lock()
 
-        self._db = await aiosqlite.connect(self._path)
-        await self._db.execute("PRAGMA foreign_keys = ON")
-        # WAL keeps concurrent reads (retrieval) from blocking on an upload write.
-        await self._db.execute("PRAGMA journal_mode = WAL")
-        await self._db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS documents (
-                source_key TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                topic TEXT NOT NULL,
-                doc_type TEXT NOT NULL,
-                content_hash TEXT NOT NULL,
-                last_fetched TEXT NOT NULL
-            )
-            """
-        )
-        await self._db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS fragments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source_key TEXT NOT NULL REFERENCES documents(source_key) ON DELETE CASCADE,
-                chunk_index INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                source_url TEXT,
-                topic TEXT,
-                embedding_json TEXT
-            )
-            """
-        )
-        await self._db.commit()
+    # --- pass-through mutations: delegate, then invalidate the local index ---
 
     async def get_hash(self, source_key: str) -> str | None:
-        cursor = await self._db.execute(
-            "SELECT content_hash FROM documents WHERE source_key = ?", (source_key,)
-        )
-        row = await cursor.fetchone()
-        await cursor.close()
-        return row[0] if row else None
+        return await self._inner.get_hash(source_key)
 
-    async def replace_source(self, *, source_key, title, topic, doc_type, content_hash,
-                             chunks, embeddings, source_url) -> str:
-        embeddings = embeddings or [None] * len(chunks)
-        cursor = await self._db.execute(
-            "SELECT 1 FROM documents WHERE source_key = ?", (source_key,)
-        )
-        existing = await cursor.fetchone()
-        await cursor.close()
-        status = "updated" if existing else "new"
-        if existing:
-            await self._db.execute("DELETE FROM documents WHERE source_key = ?", (source_key,))
-
-        await self._db.execute(
-            """INSERT INTO documents (source_key, title, topic, doc_type, content_hash, last_fetched)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (source_key, title, topic, doc_type, content_hash, datetime.now(UTC).isoformat()),
-        )
-        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
-            await self._db.execute(
-                """INSERT INTO fragments
-                   (source_key, chunk_index, content, source_url, topic, embedding_json)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (
-                    source_key,
-                    i,
-                    chunk,
-                    source_url,
-                    topic,
-                    json.dumps(embedding) if embedding is not None else None,
-                ),
-            )
-        await self._db.commit()
-        return status
+    async def ensure_schema(self) -> None:
+        await self._inner.ensure_schema()
 
     async def list_documents(self) -> list[dict]:
-        cursor = await self._db.execute(
-            """SELECT d.source_key, d.title, d.doc_type, d.content_hash, d.last_fetched,
-                      (SELECT COUNT(*) FROM fragments f WHERE f.source_key = d.source_key)
-                 FROM documents d
-                ORDER BY d.last_fetched DESC"""
-        )
-        rows = await cursor.fetchall()
-        await cursor.close()
-        result: list[dict] = []
-        for source_key, title, doc_type, content_hash, last_fetched, frag_count in rows:
-            fetched = _parse_datetime(last_fetched)
-            result.append(
-                {
-                    "id": str(uuid.uuid5(uuid.NAMESPACE_URL, source_key)),
-                    "source_url": source_key,
-                    "title": title,
-                    "doc_type": doc_type,
-                    "content_hash": content_hash,
-                    "last_fetched": fetched,
-                    "created_at": fetched,
-                    "fragment_count": int(frag_count or 0),
-                }
-            )
-        return result
+        return await self._inner.list_documents()
+
+    async def replace_source(self, **kwargs) -> str:
+        status = await self._inner.replace_source(**kwargs)
+        self.invalidate()
+        return status
 
     async def delete_source(self, source_key: str) -> bool:
-        cursor = await self._db.execute(
-            "SELECT 1 FROM documents WHERE source_key = ?", (source_key,)
-        )
-        exists = await cursor.fetchone()
-        await cursor.close()
-        if exists is None:
-            return False
-        await self._db.execute("DELETE FROM documents WHERE source_key = ?", (source_key,))
-        await self._db.commit()
-        return True
+        found = await self._inner.delete_source(source_key)
+        if found:
+            self.invalidate()
+        return found
 
     async def reset(self) -> None:
-        await self._db.execute("DELETE FROM documents")
-        await self._db.commit()
+        await self._inner.reset()
+        self.invalidate()
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+    # --- cached reads ---
+
+    def invalidate(self) -> None:
+        """Drop the index; the next search reloads it."""
+        self._fragments = None
+        self._loaded_version = -1
+
+    def _stale(self) -> bool:
+        if self._fragments is None:
+            return True
+        if corpus_version() != self._loaded_version:
+            return True
+        return self._ttl > 0 and (time.monotonic() - self._loaded_at) > self._ttl
+
+    async def _ensure_fresh(self) -> list[Fragment]:
+        if self._stale():
+            async with self._lock:
+                if self._stale():
+                    self._fragments = await self._inner.dump_fragments()
+                    self._loaded_at = time.monotonic()
+                    self._loaded_version = corpus_version()
+        return self._fragments or []
+
+    async def dump_fragments(self) -> list[Fragment]:
+        return list(await self._ensure_fresh())
 
     async def search(
         self, query_embedding: list[float] | None, query_text: str, k: int = 5
     ) -> list[RetrievedChunk]:
-        cursor = await self._db.execute(
-            """SELECT f.content, f.source_url, f.topic, f.chunk_index, f.embedding_json, d.title
-               FROM fragments f JOIN documents d ON d.source_key = f.source_key"""
-        )
-        rows = await cursor.fetchall()
-        await cursor.close()
-
-        terms = None if query_embedding is not None else keyword_terms(query_text)
-        results: list[RetrievedChunk] = []
-        for content, source_url, topic, chunk_index, embedding_json, title in rows:
-            if query_embedding is not None:
-                if not embedding_json:
-                    continue  # unembedded chunk can't be cosine-ranked
-                try:
-                    embedding = json.loads(embedding_json)
-                except json.JSONDecodeError:
-                    continue
-                score = cosine_similarity(query_embedding, embedding)
-            else:
-                score = keyword_score(content, terms or [])
-                if score <= 0:
-                    continue
-            results.append(
-                RetrievedChunk(
-                    content=content,
-                    source_url=source_url,
-                    title=title,
-                    topic=topic,
-                    chunk_index=chunk_index,
-                    score=score,
-                )
-            )
-        results.sort(key=lambda chunk: chunk.score, reverse=True)
-        return results[:k]
-
-    async def close(self) -> None:
-        if self._db is not None:
-            await self._db.close()
+        fragments = await self._ensure_fresh()
+        return rank_fragments(fragments, query_embedding, query_text, k)
 
 
-async def resolve_store(store_type: str | None = None) -> Store:
-    """'auto' (default): PgVectorStore when DATABASE_URL is set, else SqliteStore.
-    'pg' / 'sqlite' force a backend."""
-    import os
-
-    if store_type is None:
-        store_type = os.environ.get("INGEST_STORE", "auto")
-
-    has_database_url = settings.database_url and settings.database_url.startswith("postgresql+asyncpg")
-    if store_type == "pg" or (store_type == "auto" and has_database_url):
-        return PgVectorStore()
-
-    if store_type in {"sqlite", "auto"}:
-        store = SqliteStore()
-        await store.connect()
-        return store
-
-    raise ValueError(f"Unknown store type: {store_type}")
+def get_store() -> CachedStore:
+    """Factory for the serving store: CachedStore over PgVectorStore."""
+    inner = PgVectorStore()
+    return CachedStore(inner, ttl_seconds=settings.kb_cache_ttl_seconds)

@@ -2,17 +2,11 @@
 
 Examples
 --------
-Store into local Sqlite stand-in (no ML stack needed, no network):
-    python -m ingest.run --store sqlite
-
-Add embeddings (needs torch + sentence-transformers installed):
-    python -m ingest.run --store sqlite --embed
-
-Ingest into Neon Postgres/pgvector (creates schema automatically):
-    python -m ingest.run --store pg
+Ingest into local Postgres/pgvector (creates schema automatically):
+    python -m ingest.run --embed
 
 Force re-ingest of everything (ignore content hashes):
-    python -m ingest.run --store sqlite --force
+    python -m ingest.run --force
 """
 
 import argparse
@@ -21,7 +15,7 @@ import asyncio
 from ingest.embedder import Embedder
 from ingest.pipeline import ingest_sources
 from ingest.sources import discover_all
-from ingest.store import resolve_store
+from ingest.store import get_store
 
 
 async def run(options: argparse.Namespace) -> int:
@@ -30,7 +24,7 @@ async def run(options: argparse.Namespace) -> int:
         print("No sources found. Drop PDFs/DOCX into data_sources/ or pass --source <url|path>.")
         return 1
 
-    store = await resolve_store(options.store)
+    store = get_store()
     embedder = Embedder() if options.embed else None
 
     try:
@@ -48,12 +42,6 @@ async def run(options: argparse.Namespace) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest documents into the vector store")
-    parser.add_argument(
-        "--store",
-        choices=["auto", "pg", "sqlite"],
-        default="auto",
-        help="pg = Neon pgvector, sqlite = local store (default: auto)",
-    )
     parser.add_argument(
         "--embed",
         action="store_true",

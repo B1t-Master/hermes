@@ -1,3 +1,6 @@
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +14,19 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
 
     database_url: str = "postgresql+asyncpg://localhost:5432/hermes"
+
+    # --- Database pool (Postgres only) ---
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_recycle: int = 1800
+    db_pool_pre_ping: bool = True
+
+    # --- Knowledge-base cache ---
+    kb_cache_ttl_seconds: float = 300.0
+
+    # --- Deployment / HTTP ---
+    app_env: str = "development"
+    cors_origins: str = "http://localhost:5173"
 
     groq_api_key: str = ""
     deepseek_api_key: str = ""
@@ -30,20 +46,48 @@ class Settings(BaseSettings):
     agent_username: str = "agent"
     agent_password: str = "change-me"
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _force_asyncpg_driver(cls, value: object) -> object:
+        """Normalise Postgres DSNs to what the asyncpg driver expects.
+
+        Neon (and Heroku) hand out ``postgres://`` / ``postgresql://`` URLs, but
+        the engine is async (``create_async_engine``) and asyncpg is the driver
+        this project installs. Without the explicit ``+asyncpg`` SQLAlchemy
+        falls back to psycopg2, which is not a dependency, so every import of
+        ``app.db`` dies with ``ModuleNotFoundError: No module named 'psycopg2'``
+        and ingest's ``auto`` store check silently misses the pg backend.
+
+        asyncpg also rejects libpq-only query params: ``sslmode`` becomes
+        ``ssl`` (asyncpg accepts the same mode strings) and ``channel_binding``
+        is dropped. Without this, the connection fails with
+        ``TypeError: connect() got an unexpected keyword argument 'sslmode'``.
+        """
+        if not isinstance(value, str):
+            return value
+        for prefix in ("postgres://", "postgresql://"):
+            if value.startswith(prefix):
+                value = "postgresql+asyncpg://" + value[len(prefix):]
+                break
+        if not value.startswith("postgresql+asyncpg://"):
+            return value
+        parts = urlsplit(value)
+        translated: list[tuple[str, str]] = []
+        for key, val in parse_qsl(parts.query, keep_blank_values=True):
+            if key == "channel_binding":
+                continue
+            translated.append(("ssl" if key == "sslmode" else key, val))
+        if translated == parse_qsl(parts.query, keep_blank_values=True):
+            return value
+        return urlunsplit(parts._replace(query=urlencode(translated)))
+
     @property
     def is_llm_configured(self) -> bool:
         return bool(self.groq_api_key or self.deepseek_api_key)
 
     @property
-    def is_sqlite_backend(self) -> bool:
-        """True when DATABASE_URL points at a local SQLite file.
-
-        The app defaults to Postgres/Neon in production. A SQLite backend is
-        supported so the whole app can run fully local in sandboxes where the
-        Neon endpoint has multi-second round-trip latency (models already
-        support it: UUID/enum/JSON columns all port cleanly).
-        """
-        return self.database_url.startswith("sqlite")
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 settings = Settings()
