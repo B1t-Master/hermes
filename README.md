@@ -61,6 +61,8 @@ The flight schedule lands in `.flights.sqlite` on first use; no extra setup.
 
 ## Architecture
 
+<img src="docs/architecture.png" alt="hermes architecture" width="720" />
+
 Passenger query -> **sentiment + intent** analysis -> **Router agent** ->
 
 - routine -> retrieve relevant chunks from pgvector -> **Q&A agent** generates a
