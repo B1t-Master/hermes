@@ -57,7 +57,8 @@ class Settings(BaseSettings):
     agent_username: str = "agent"
     agent_password: str = "change-me"
 
-    # --- Mock outputs (no real delivery/provider) ---
+    # --- Prototype outputs ---
+    # Address seeded into rebook_email_map; confirms only go to mapped tickets.
     rebook_confirmation_email: str = "isaacmwanginjuguna@gmail.com"
     email_outbox_dir: str = ".mock_emails"
 

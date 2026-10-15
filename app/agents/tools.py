@@ -47,8 +47,33 @@ REBOOK_PATTERNS = (
 _REBOOK_RE = re.compile("|".join(REBOOK_PATTERNS), re.IGNORECASE)
 
 # A follow-up turn that supplies the booking reference the rebooking needs.
+# Accepts digit-only references ("1234567890"), hyphenated alphanumeric ones
+# ("HRM-9B4770", "KQ-123456", "TEST-0001") and letters+digits ("KQ123456").
+# A hyphen or a digit run is required so ordinary words ("baggage") do not
+# masquerade as booking references.
 _TICKET_HINT = re.compile(r"\b(ticket|booking|reference|pnr|e-?ticket)\b", re.IGNORECASE)
-_TICKET_NUMBER = re.compile(r"\b\d{6,14}\b")
+_TICKET_NUMBER = re.compile(
+    r"\b(?:\d{6,14}|[A-Z]{2,4}-[A-Z0-9]{4,}|[A-Z]{2,4}\d{4,})\b", re.IGNORECASE
+)
+
+# A follow-up turn that supplies the new travel date ("tomorrow", "tomorrow
+# afternoon", "day after tomorrow", "2025-04-20", "next Friday", ...).
+_RELATIVE_DATE = re.compile(
+    r"\b(today|tonight|tomorrow|day after tomorrow|overmorrow|next day|"
+    r"next week|next month|monday|tuesday|wednesday|thursday|friday|"
+    r"saturday|sunday)\b",
+    re.IGNORECASE,
+)
+_ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+
+# What our own assistant says while walking the passenger through a rebooking,
+# used to keep the tools available on the follow-up turns (the passenger's
+# answer alone often looks like plain text: "HRM-9B4770", "tomorrow").
+_ASSISTANT_REBOOK_PROMPT = re.compile(
+    r"booking reference|e-?ticket number|new travel date|"
+    r"what.{0,20}date|which date|re-?book",
+    re.IGNORECASE,
+)
 
 
 def _has_rebook_intent(text: str) -> bool:
@@ -59,20 +84,48 @@ def _looks_like_ticket(text: str) -> bool:
     return bool(_TICKET_HINT.search(text) or _TICKET_NUMBER.search(text))
 
 
+def _looks_like_date(text: str) -> bool:
+    return bool(_RELATIVE_DATE.search(text) or _ISO_DATE.search(text))
+
+
+def _in_rebook_flow(history: list[dict] | None) -> bool:
+    """Whether a rebooking conversation is already underway.
+
+    Keeps the tools available from the moment the passenger asks to rebook
+    until the flow completes, so follow-up turns that contain only a booking
+    reference or a date ("HRM-9B4770", "tomorrow afternoon") stay on the
+    rebook path instead of falling back to the knowledge-base answer.
+    """
+    recent = (history or [])[-6:]
+    if any(
+        m.get("role") == "user" and _has_rebook_intent(m.get("content", ""))
+        for m in recent
+    ):
+        return True
+    last_assistant = next(
+        (m for m in reversed(recent) if m.get("role") == "assistant"), None
+    )
+    return bool(
+        last_assistant
+        and _ASSISTANT_REBOOK_PROMPT.search(last_assistant.get("content", ""))
+    )
+
+
 def detect_rebook_request(query: str, history: list[dict] | None = None) -> bool:
     """Whether to offer the rebook tools on this turn.
 
-    True for a direct rebook ask, or when the passenger is answering our
-    request for a booking reference right after a rebook ask (so the multi-turn
-    flow keeps the tools available). Unrelated follow-ups stay on the plain
-    path.
+    True for a direct rebook ask, or while a rebooking conversation is already
+    underway and this turn supplies the booking reference or the new date (so
+    the multi-turn flow keeps the tools available). Unrelated follow-ups stay
+    on the plain path.
     """
     if _has_rebook_intent(query):
         return True
-    if not (history and _looks_like_ticket(query)):
+    if not history:
         return False
-    recent_user = [m.get("content", "") for m in history[-4:] if m.get("role") == "user"]
-    return any(_has_rebook_intent(text) for text in recent_user)
+    if not (_looks_like_ticket(query) or _looks_like_date(query)):
+        return False
+    return _in_rebook_flow(history)
 
 
 TOOL_SPECS = [
@@ -128,18 +181,21 @@ TOOL_SPECS = [
         "function": {
             "name": "rebook_flight",
             "description": (
-                "Rebook a passenger whose flight was cancelled or rescheduled "
-                "onto the same flight number on a new date (default: the next "
-                "day). Requires the passenger's booking reference or e-ticket "
-                "number. Emails a confirmation. Returns the new flight details "
-                "and a confirmation reference."
+                "Rebook a passenger onto an available flight for a new travel "
+                "date. Requires the passenger's booking reference or e-ticket "
+                "number AND the new travel date (natural language like "
+                "'tomorrow' or 'tomorrow afternoon' is understood); ask for "
+                "whichever is missing instead of calling this tool. The new "
+                "flight is chosen automatically. Emails a confirmation only "
+                "when the booking reference has an email address on file; the "
+                "result's `email_sent` field says whether one was sent."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "flight_no": {
                         "type": "string",
-                        "description": 'The disrupted flight number, such as "KQ100".',
+                        "description": "Optional original flight number, when known.",
                     },
                     "ticket_number": {
                         "type": "string",
@@ -151,7 +207,11 @@ TOOL_SPECS = [
                     },
                     "new_date": {
                         "type": "string",
-                        "description": "Preferred new travel date YYYY-MM-DD; defaults to the next day.",
+                        "description": (
+                            "The passenger's new travel date, e.g. 'tomorrow', "
+                            "'tomorrow afternoon', 'day after tomorrow' or "
+                            "YYYY-MM-DD. Ask for it if not provided."
+                        ),
                     },
                     "passenger_name": {
                         "type": "string",
@@ -162,7 +222,7 @@ TOOL_SPECS = [
                         "description": "Why the flight is being rebooked (delay, cancellation, schedule change).",
                     },
                 },
-                "required": ["flight_no", "ticket_number"],
+                "required": ["ticket_number"],
             },
         },
     },
@@ -176,7 +236,7 @@ def _canonical_name(name: str) -> str:
 
 def _rebook(arguments: dict) -> dict:
     return rebook.rebook_flight(
-        arguments.get("flight_no", ""),
+        arguments.get("flight_no") or None,
         ticket_number=arguments.get("ticket_number"),
         new_date=arguments.get("new_date"),
         passenger_name=arguments.get("passenger_name"),
@@ -201,14 +261,21 @@ async def _lookup_ticket_email(ticket_number: str | None) -> str | None:
 
 
 async def _send_rebook_confirmation(result: dict) -> None:
-    """Email the confirmation and annotate ``result`` with delivery details.
+    """Email the confirmation when the ticket has an address on file.
 
-    A mapping row overrides the destination; otherwise the default
-    REBOOK_CONFIRMATION_EMAIL is used. Delivery problems are swallowed — the
-    rebooking already succeeded, and the passenger's answer must not fail.
+    Only tickets present in ``rebook_email_map`` get a confirmation; an
+    unknown ticket is reported back (no email) rather than defaulted. Delivery
+    problems are swallowed — the rebooking already succeeded, and the
+    passenger's answer must not fail because of mail.
     """
     to = await _lookup_ticket_email(result.get("ticket_number"))
-    to = to or settings.rebook_confirmation_email
+    if not to:
+        result["email_sent"] = False
+        result["email_note"] = (
+            "No email address is on file for this booking reference, so no "
+            "confirmation was sent."
+        )
+        return
     subject, body = rebook.confirmation_email(result)
     try:
         record = await asyncio.to_thread(

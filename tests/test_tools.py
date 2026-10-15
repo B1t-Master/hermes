@@ -1,11 +1,13 @@
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from app.agents import tools
-from app.config import settings
 
 TICKET = "1234567890"
+NEW_DATE = "2025-03-02"
 
 
 class DetectRebookTest(unittest.TestCase):
@@ -39,6 +41,26 @@ class DetectRebookTest(unittest.TestCase):
             tools.detect_rebook_request("My booking reference is 1234567890.", history)
         )
 
+    def test_alphanumeric_ticket_follow_up_keeps_tools(self):
+        history = [
+            {"role": "user", "content": "i need to rebook"},
+            {
+                "role": "assistant",
+                "content": "What is your booking reference or e-ticket number?",
+            },
+        ]
+        self.assertTrue(tools.detect_rebook_request("HRM-9B4770", history))
+
+    def test_date_follow_up_keeps_tools(self):
+        history = [
+            {"role": "user", "content": "i need to rebook"},
+            {"role": "assistant", "content": "What is your booking reference?"},
+            {"role": "user", "content": "HRM-9B4770"},
+            {"role": "assistant", "content": "What is your new travel date?"},
+        ]
+        for answer in ("tomorrow", "tomorrow afternoon", "day after tomorrow", "2025-04-20"):
+            self.assertTrue(tools.detect_rebook_request(answer, history), answer)
+
     def test_ticket_follow_up_without_rebook_history(self):
         history = [{"role": "user", "content": "hello there"}]
         self.assertFalse(
@@ -51,14 +73,29 @@ class DetectRebookTest(unittest.TestCase):
 
 
 class CallToolTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._db = str(Path(self._tmp.name) / "flights.sqlite")
+        self._patch = mock.patch.object(tools.rebook, "DEFAULT_DB_PATH", self._db)
+        self._patch.start()
+
+    def tearDown(self):
+        self._patch.stop()
+        self._tmp.cleanup()
+
     async def test_status(self):
         result = await tools.call_tool("get_flight_status", {"flight_no": "KQ100"})
         self.assertTrue(result["found"])
 
     async def test_rebook_requires_ticket(self):
-        result = await tools.call_tool("rebook_flight", {"flight_no": "KQ100"})
+        result = await tools.call_tool("rebook_flight", {"new_date": NEW_DATE})
         self.assertFalse(result["rebooked"])
         self.assertTrue(result["needs_ticket"])
+
+    async def test_rebook_requires_date(self):
+        result = await tools.call_tool("rebook_flight", {"ticket_number": TICKET})
+        self.assertFalse(result["rebooked"])
+        self.assertTrue(result["needs_date"])
 
     async def test_rebook_emails_mapped_address(self):
         fake = {"sent_at": "2025-03-01T00:00:00+00:00", "provider": "resend", "id": "abc"}
@@ -67,7 +104,7 @@ class CallToolTest(unittest.IsolatedAsyncioTestCase):
             mock.patch.object(tools.email_real, "send_email", return_value=fake) as send,
         ):
             result = await tools.call_tool(
-                "rebook_flight", {"flight_no": "KQ100", "ticket_number": TICKET}
+                "rebook_flight", {"ticket_number": TICKET, "new_date": NEW_DATE}
             )
         self.assertTrue(result["rebooked"])
         self.assertTrue(result["email_sent"])
@@ -76,25 +113,26 @@ class CallToolTest(unittest.IsolatedAsyncioTestCase):
         send.assert_called_once()
         self.assertEqual(send.call_args.args[0], "pax@example.com")
 
-    async def test_rebook_falls_back_to_default_email(self):
-        fake = {"sent_at": "t", "provider": "resend"}
+    async def test_rebook_without_mapping_sends_nothing(self):
         with (
             mock.patch.object(tools, "_lookup_ticket_email", return_value=None),
-            mock.patch.object(tools.email_real, "send_email", return_value=fake),
+            mock.patch.object(tools.email_real, "send_email") as send,
         ):
             result = await tools.call_tool(
-                "rebook_flight", {"flight_no": "KQ100", "ticket_number": TICKET}
+                "rebook_flight", {"ticket_number": TICKET, "new_date": NEW_DATE}
             )
-        self.assertTrue(result["email_sent"])
-        self.assertEqual(result["email_to"], settings.rebook_confirmation_email)
+        self.assertTrue(result["rebooked"])
+        self.assertFalse(result["email_sent"])
+        self.assertIn("email_note", result)
+        send.assert_not_called()
 
     async def test_failed_email_does_not_break_rebook(self):
         with (
-            mock.patch.object(tools, "_lookup_ticket_email", return_value=None),
+            mock.patch.object(tools, "_lookup_ticket_email", return_value="pax@example.com"),
             mock.patch.object(tools.email_real, "send_email", side_effect=RuntimeError("boom")),
         ):
             result = await tools.call_tool(
-                "rebook_flight", {"flight_no": "KQ100", "ticket_number": TICKET}
+                "rebook_flight", {"ticket_number": TICKET, "new_date": NEW_DATE}
             )
         self.assertTrue(result["rebooked"])
         self.assertNotIn("email_sent", result)
@@ -108,7 +146,7 @@ class CallToolTest(unittest.IsolatedAsyncioTestCase):
         ):
             result = await tools.call_tool(
                 "repo_browser.rebook_flight",
-                {"flight_no": "KQ100", "ticket_number": TICKET},
+                {"ticket_number": TICKET, "new_date": NEW_DATE},
             )
         self.assertTrue(result["rebooked"])
 
@@ -134,6 +172,16 @@ class _FakeLLM:
 
 
 class RunToolTurnTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._db = str(Path(self._tmp.name) / "flights.sqlite")
+        self._patch = mock.patch.object(tools.rebook, "DEFAULT_DB_PATH", self._db)
+        self._patch.start()
+
+    def tearDown(self):
+        self._patch.stop()
+        self._tmp.cleanup()
+
     async def test_executes_tool_then_returns_answer(self):
         fake = _FakeLLM(
             [
@@ -147,7 +195,7 @@ class RunToolTurnTest(unittest.IsolatedAsyncioTestCase):
                             "function": {
                                 "name": "rebook_flight",
                                 "arguments": json.dumps(
-                                    {"flight_no": "KQ100", "ticket_number": TICKET}
+                                    {"ticket_number": TICKET, "new_date": NEW_DATE}
                                 ),
                             },
                         }

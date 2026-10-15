@@ -64,16 +64,22 @@ Context:
 # Added to the system prompt when a rebooking request is detected, so the
 # model knows it may act with the tool instead of only quoting the context.
 REBOOK_TOOL_INSTRUCTION = """\
+The passenger wants to rebook a flight.
 
-The passenger wants to rebook a disrupted flight. A booking reference or
-e-ticket number is required:
-- If you do not have it yet, ask the passenger for it and do NOT call the tool
-  this turn.
-- Once you have it, call the `rebook_flight` tool with the flight number and
-  the booking reference.
+- You need TWO things: the booking reference/e-ticket number, and the new
+  travel date. Ask for whichever is missing, ONE at a time.
+- NEVER ask for the booking reference twice. If it already appears anywhere in
+  the conversation (including earlier turns), reuse it silently.
+- NEVER ask for a flight number. The system chooses a flight automatically.
+- Accept natural-language dates such as "tomorrow", "tomorrow afternoon",
+  "day after tomorrow", or a calendar date.
+- Only call `rebook_flight` once you have BOTH the booking reference and the new
+  date. Do not call it with only one of them.
 - After a successful rebooking, confirm the new flight details and the
-  confirmation reference, and tell the passenger that a confirmation has been
-  emailed to them."""
+  confirmation reference. If the result has `email_sent` true, tell the
+  passenger a confirmation was emailed; if `email_sent` is false, tell them no
+  email address is on file for that booking reference and that no confirmation
+  was sent (do not claim one was emailed)."""
 
 
 class AgentState(TypedDict, total=False):
