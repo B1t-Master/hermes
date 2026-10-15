@@ -21,9 +21,11 @@ Tools exposed:
   - get_flight_status(flight_no, date?)   one flight's status on a day
   - list_delays(route?, date?, min_delay?)  delayed flights, worst first
 
-The data is the same mock schedule the LangGraph `flight_lookup` node uses
-in-process (`services/flight_delays.py`), so every consumer sees identical
-answers for a given day.
+The backend queries these tools through an MCP stdio client
+(`app/agents/mcp_client.py`), so the bot is a real MCP consumer. The tools wrap
+the same mock schedule the in-process library uses
+(`services/flight_delays.py`), so every consumer sees identical answers for a
+given day.
 """
 
 from mcp.server.fastmcp import FastMCP

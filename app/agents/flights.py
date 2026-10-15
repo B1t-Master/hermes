@@ -1,17 +1,18 @@
-"""In-process flight lookup for the LangGraph pipeline.
+"""Flight lookup for the LangGraph pipeline, backed by the MCP server.
 
-The graph calls the same mock flight service the MCP server exposes
-(`services/flight_delays.py`), async-wrapped so SQLite never blocks the event
-loop. Detection is deterministic (regex + keyword), not LLM-driven, so the
-decision to look up a flight is auditable and cheap; the LLM only ever sees
-the rendered result via the `flight_context` state field.
+The graph queries the mock flight service through the `hermes-flights` MCP
+server (`app.agents.mcp_client`), which falls back to the in-process library
+(`services/flight_delays.py`) when the server is unreachable. Detection is
+deterministic (regex + keyword), not LLM-driven, so the decision to look up a
+flight is auditable and cheap; the LLM only ever sees the rendered result via
+the `flight_context` state field.
 """
 
 from __future__ import annotations
 
-import asyncio
 import re
 
+from app.agents.mcp_client import get_flights_client
 from services import flight_delays
 
 FLIGHT_NO_RE = re.compile(r"\bKQ[\s\-]*(\d{2,4})\b", re.IGNORECASE)
@@ -93,13 +94,13 @@ def detect_flight_request(query: str) -> dict | None:
 
 
 class FlightLookup:
-    """Async facade over the sync mock service (SQLite stays off the loop)."""
+    """Async facade over the flight MCP client (SQLite stays off the loop)."""
 
     async def status(self, flight_no: str, day: str | None = None) -> dict:
-        return await asyncio.to_thread(flight_delays.get_flight_status, flight_no, day)
+        return await get_flights_client().status(flight_no, day)
 
     async def delays(self, route: str | None = None, day: str | None = None) -> list[dict]:
-        return await asyncio.to_thread(flight_delays.list_delays, route, day)
+        return await get_flights_client().delays(route, day)
 
     @staticmethod
     def render_status(info: dict) -> str:

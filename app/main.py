@@ -77,6 +77,17 @@ async def _warm_up() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await _warm_up()
+    flights = None
+    if settings.flights_mcp_enabled:
+        from app.agents.mcp_client import get_flights_client
+
+        flights = get_flights_client()
+        try:
+            await flights.start()
+        except Exception:
+            logger.exception(
+                "Flight MCP client failed to start; using the in-process service"
+            )
     telegram = None
     if settings.telegram_enabled:
         from app.channels.telegram import get_telegram_channel
@@ -88,6 +99,8 @@ async def lifespan(app: FastAPI):
     finally:
         if telegram is not None:
             await telegram.stop()
+        if flights is not None:
+            await flights.stop()
 
 
 app = FastAPI(

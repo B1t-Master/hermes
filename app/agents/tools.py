@@ -1,8 +1,9 @@
 """LLM function calling for the hermes agent.
 
-Tool schemas are OpenAI-compatible. Implementations are the same mock services
-the MCP server exposes (`services/flight_delays.py`, `services/rebook.py`), so
-the bot and external MCP clients share one source of truth.
+Tool schemas are OpenAI-compatible. Flight tools go through the
+`hermes-flights` MCP server (`app.agents.mcp_client`); rebooking uses
+`services/rebook.py`. The bot and external MCP clients therefore share one
+source of truth for flight data.
 
 `run_tool_turn` drives the model/tool loop: the model may call tools, results
 are fed back as `tool` messages, and the loop returns once the model replies
@@ -19,10 +20,11 @@ import re
 from sqlalchemy import func, select
 
 from app.agents.llm import LLM, get_llm
+from app.agents.mcp_client import get_flights_client
 from app.config import settings
 from app.db import SessionLocal
 from app.models import RebookEmailMap
-from services import email_real, flight_delays, rebook
+from services import email_real, rebook
 
 logger = logging.getLogger(__name__)
 
@@ -298,26 +300,29 @@ async def _send_rebook_confirmation(result: dict) -> None:
 
 def _run_tool(name: str, arguments: dict) -> dict:
     name = _canonical_name(name)
-    if name == "get_flight_status":
-        return flight_delays.get_flight_status(
-            arguments.get("flight_no", ""), arguments.get("date")
-        )
-    if name == "list_delays":
-        return {
-            "delays": flight_delays.list_delays(
-                arguments.get("route"), arguments.get("date")
-            )
-        }
     if name == "rebook_flight":
         return _rebook(arguments)
     return {"error": f"unknown tool: {name}"}
 
 
+async def _call_flight_tool(name: str, arguments: dict) -> dict:
+    """Flight tools go through the MCP client (with its in-process fallback)."""
+    client = get_flights_client()
+    if name == "get_flight_status":
+        return await client.status(
+            arguments.get("flight_no", ""), arguments.get("date")
+        )
+    return {"delays": await client.delays(arguments.get("route"), arguments.get("date"))}
+
+
 async def call_tool(name: str, arguments: dict) -> dict:
-    """Execute one tool off the event loop (the mock services are sync/SQLite)."""
+    """Execute one tool; rebooking runs off-loop, flights over MCP."""
     name = _canonical_name(name)
     try:
-        result = await asyncio.to_thread(_run_tool, name, arguments)
+        if name in ("get_flight_status", "list_delays"):
+            result = await _call_flight_tool(name, arguments)
+        else:
+            result = await asyncio.to_thread(_run_tool, name, arguments)
     except Exception as exc:
         logger.exception("Tool %s failed", name)
         return {"error": f"{type(exc).__name__}: {exc}"}
