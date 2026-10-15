@@ -1,12 +1,11 @@
 """Mock flight-delay data: deterministic per-day, SQLite-backed, no network.
 
-This is the single source of truth for the simulated flight schedule. Both
-consumers share it:
-
-  - `services/flights_mcp.py` exposes the same functions as MCP tools
-    (`get_flight_status`, `list_delays`) for standalone/external MCP clients;
-  - the LangGraph `flight_lookup` node calls them in-process, so the bot and
-    every MCP client see byte-identical data.
+This is the single source of truth for the simulated flight schedule. The
+`services/flights_mcp.py` MCP server exposes it as tools (`get_flight_status`,
+`list_delays`), and the bot queries those tools through the MCP client
+(`app/agents/mcp_client.py`) so it is a real MCP consumer. The in-process
+functions here remain the fallback (and back the MCP server itself), so every
+caller sees identical data.
 
 Determinism contract: delays are generated from a RNG seeded by the calendar
 date, so all lookups for a given day return stable answers, and the answers

@@ -17,7 +17,7 @@ sentiment, with a streaming LLM via Groq or DeepSeek.
 - **Frontend:** React (Vite): passenger chat widget + human-agent dashboard
 - **Channels:** web chat widget (WebSocket streaming) + Telegram (long polling)
 - **Email:** Resend for rebooking confirmations, with a local outbox fallback
-- **Flight data:** SQLite schedule (`.flights.sqlite`) shared with a mock MCP server
+- **Flight data:** SQLite schedule (`.flights.sqlite`) served through a mock MCP server
 
 ## Quick start
 
@@ -129,9 +129,13 @@ The same functions are exposed as a standalone **MCP server** so any MCP client
 Tools: `get_flight_status(flight_no, date?)` and
 `list_delays(route?, date?, min_delay?)`.
 
-The QA pipeline calls the same underlying functions in-process (`flight_lookup`
-graph node), so the bot and every MCP client see identical answers. Smoke test:
-`.venv/bin/python tests/mcp_flights_smoke.py`
+The bot queries these tools through an MCP stdio client
+(`app/agents/mcp_client.py`), so it is a real MCP consumer rather than a second
+in-process caller. If the server is unreachable the client falls back to the
+in-process library, so a flight question never takes the whole turn down. Set
+`FLIGHTS_MCP_ENABLED=false` to skip MCP entirely. Smoke test:
+`.venv/bin/python tests/mcp_flights_smoke.py` (also covered by
+`tests/test_mcp_client.py` under pytest).
 
 ## Project layout
 

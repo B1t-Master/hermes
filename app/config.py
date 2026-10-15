@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     telegram_poll_timeout: int = 25
     telegram_api_base: str = "https://api.telegram.org"
 
+    # --- Flight MCP client ---
+    # Answer flight status/delay questions through the hermes-flights MCP
+    # server (stdio). Set false to call the in-process library directly; the
+    # client also falls back on its own when the server is unreachable.
+    flights_mcp_enabled: bool = True
+
     @field_validator("database_url", mode="before")
     @classmethod
     def _force_asyncpg_driver(cls, value: object) -> object:

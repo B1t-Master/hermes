@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 from app.agents import tools
+from services import flight_delays
 
 TICKET = "1234567890"
 NEW_DATE = "2025-03-02"
@@ -76,11 +77,19 @@ class CallToolTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self._db = str(Path(self._tmp.name) / "flights.sqlite")
-        self._patch = mock.patch.object(tools.rebook, "DEFAULT_DB_PATH", self._db)
-        self._patch.start()
+        # Unit tests do not exercise the MCP subprocess; disable it so flight
+        # tools use the in-process fallback against a throwaway database.
+        self._patches = [
+            mock.patch.object(tools.rebook, "DEFAULT_DB_PATH", self._db),
+            mock.patch.object(flight_delays, "DEFAULT_DB_PATH", self._db),
+            mock.patch.object(tools.settings, "flights_mcp_enabled", False),
+        ]
+        for patch in self._patches:
+            patch.start()
 
     def tearDown(self):
-        self._patch.stop()
+        for patch in self._patches:
+            patch.stop()
         self._tmp.cleanup()
 
     async def test_status(self):
