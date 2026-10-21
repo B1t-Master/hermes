@@ -63,6 +63,7 @@ class MessageOut(BaseModel):
     sentiment_score: float | None
     sentiment_label: str | None
     sources: list[dict] | None = None
+    actions: list[dict] | None = None
     created_at: datetime
 
 
@@ -122,6 +123,9 @@ class TurnOut(BaseModel):
     bot_message: MessageOut | None
     escalate: bool
     escalation_reason: str | None = None
+    # Soft escalation: True when the bot offered options instead of escalating.
+    offer_escalation: bool = False
+    escalation_offer: dict | None = None
     intent: str | None = None
     sentiment_score: float | None = None
     sentiment_label: str | None = None

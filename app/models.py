@@ -107,6 +107,9 @@ class Conversation(Base):
     )
     escalation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     turn_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Soft-escalation offers already made: after a couple the bot hands off to a
+    # human rather than asking again (see `settings.soft_escalation_max_offers`).
+    soft_offers: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -132,6 +135,10 @@ class Message(Base):
     sentiment_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Citations shown on the bot message: [{"title": str, "url": str | None}, ...]
     sources: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Optional quick-reply buttons on a bot message:
+    # [{"label": str, "value": str}, ...]. Clicking sends `value` as the next
+    # passenger message (used by the soft-escalation offer, among others).
+    actions: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")

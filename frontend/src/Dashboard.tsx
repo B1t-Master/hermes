@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "./api";
 import { useAuth } from "./auth";
+import Avatar from "./Avatar";
 import RichText from "./RichText";
 import Wings from "./Wings";
 import { formatDate, formatTime } from "./format";
@@ -542,21 +543,22 @@ export default function Dashboard() {
           <div className="chat-body" ref={scrollRef}>
             {transcript.length === 0 && <p className="placeholder">No messages.</p>}
             {transcript.map((m) => (
-              <div key={m.id} className={`message ${m.sender}${m.pending ? " pending" : ""}`}>
-                <div className="meta">
-                  <strong>
-                    {m.sender === "bot" ? (
-                      <>
-                        <Wings size={15} /> hermes
-                      </>
-                    ) : (
-                      m.sender
-                    )}
-                  </strong>
-                  <span>{formatTime(m.created_at)}</span>
-                </div>
-                <div className="body">
-                  <RichText text={m.content} />
+              <div
+                key={m.id}
+                className={`message-row ${m.sender}${m.pending ? " pending" : ""}`}
+              >
+                <Avatar
+                  kind={m.sender}
+                  name={m.sender === "bot" ? "hermes" : m.sender}
+                />
+                <div className={`message ${m.sender}${m.pending ? " pending" : ""}`}>
+                  <div className="meta">
+                    <strong>{m.sender === "bot" ? "hermes" : m.sender}</strong>
+                    <span>{formatTime(m.created_at)}</span>
+                  </div>
+                  <div className="body">
+                    <RichText text={m.content} />
+                  </div>
                 </div>
               </div>
             ))}

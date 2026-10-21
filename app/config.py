@@ -47,6 +47,19 @@ class Settings(BaseSettings):
     sentiment_escalation_consecutive_turns: int = 2
     max_loop_turns: int = 3
 
+    # --- Soft escalation (ask before handing off) ---
+    # Hard triggers (safety, explicit "talk to a human") always escalate
+    # immediately. The softer triggers (a negative-sentiment streak, or a
+    # conversation the bot cannot close) first offer the passenger options and
+    # ask. Set false to restore the old escalate-immediately behaviour.
+    soft_escalation_enabled: bool = True
+    # After this many unanswered offers, hand off to a human anyway so nobody
+    # gets stuck in a loop.
+    soft_escalation_max_offers: int = 2
+    # Compensation/refund requests escalate immediately by default (money and
+    # policy are involved). Set false to make them offer options first too.
+    escalate_on_compensation: bool = True
+
     # --- Retrieval size (prompt token budget) ---
     # Lower k / a per-chunk cap shrink each request's prompt. Helpful on
     # providers with a low tokens-per-minute quota; higher values give the
@@ -73,6 +86,20 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_poll_timeout: int = 25
     telegram_api_base: str = "https://api.telegram.org"
+
+    # --- Rebooking: official self-service page (path 1 of 2) ---
+    # Surfaced alongside the in-chat rebooking so the passenger can choose.
+    self_service_rebooking_url: str = (
+        "https://digital.kenya-airways.com/servicing/self-reaccommodation/retrieve"
+    )
+
+    # --- Baggage guidance: lost / delayed / unclaimed bags ---
+    # Deterministic, in-process content (not LLM-invented). Editable per station.
+    baggage_arrival_claim: str = "JKIA Terminal 1A - Arrivals baggage claim hall"
+    baggage_lost_and_found: str = (
+        "JKIA Terminal 1A - Airport Lost & Found desk (Arrivals level)"
+    )
+    worldtracer_url: str = "https://www.worldtracer.aero/"
 
     # --- Flight MCP client ---
     # Answer flight status/delay questions through the hermes-flights MCP

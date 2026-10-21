@@ -4,15 +4,18 @@ Flow:
 
     analyse_sentiment -> classify -> route
         route --(escalate)--> handle_escalation --> END
-        route --(routine)--> retrieve --> flight_lookup --> generate_answer --> END
+        route --(offer)--> offer_assistance --> END
+        route --(routine)--> retrieve --> flight_lookup --> baggage_lookup --> generate_answer --> END
 
 Escalation triggers (in `route`):
-  - intent in {safety, compensation, human_request} (keyword safety hits
-    arrive here via the intent layer's hard-trigger path)
-  - sentiment below `sentiment_escalation_threshold` for
-    `sentiment_escalation_consecutive_turns` consecutive passenger turns
-  - conversation running past `max_loop_turns` with a non-routine intent
-    (the passenger keeps bringing something the bot can't close)
+  - hard: intent in {safety, human_request}, or compensation while
+    `escalate_on_compensation` is on; keyword safety hits arrive here via the
+    intent layer's hard-trigger path
+  - soft: sentiment below `sentiment_escalation_threshold` for
+    `sentiment_escalation_consecutive_turns` consecutive passenger turns, or a
+    conversation running past `max_loop_turns` with a non-routine intent.
+    Soft triggers offer the passenger options first (`offer_escalation`) and
+    only hand off after `soft_escalation_max_offers` unanswered offers.
 
 Streaming: the caller may pass `on_token` (async callable) through
 `config["configurable"]`. The QA node then streams LLM tokens as they arrive
@@ -25,6 +28,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from app.agents.baggage import detect_baggage_request, render_guidance
 from app.agents.flights import detect_flight_request, get_flight_lookup
 from app.agents.intent import classify_intent
 from app.agents.llm import LLMError, get_llm
@@ -35,8 +39,50 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Intents that route straight to a human.
-ESCALATING_INTENTS = {"safety", "compensation", "human_request"}
+# Intents that always route straight to a human, without asking first.
+# Safety (audit-critical) and an explicit "talk to a human" request must not be
+# gated behind a confirmation step.
+HARD_ESCALATING_INTENTS = {"safety", "human_request"}
+# Intents that ask for confirmation first. Compensation escalates immediately
+# unless `settings.escalate_on_compensation` is turned off.
+SOFT_ESCALATING_INTENTS = {"compensation"}
+
+# Quick-reply options offered before a soft handoff. `value` is sent back as a
+# normal passenger message: the "try again" value is routine, and the "human"
+# value classifies as `human_request`, which escalates on the next turn.
+SOFT_ESCALATION_OPTIONS = [
+    {"label": "Try again", "value": "Please try again to help me with my question."},
+    {"label": "Connect me to a human", "value": "I'd like to speak to a human agent."},
+]
+
+# Sent as a bot message when a soft trigger fires. Kept channel-friendly
+# (numbered list) so the Telegram adapter can render it without buttons.
+OFFER_ESCALATION_TEXT = (
+    "I want to make sure this gets sorted, and I don't want to give up on you. "
+    "I can keep trying, or bring in a human agent now.\n\n"
+    "1. Try again - I'll take another look.\n"
+    "2. Connect me to a human - I'll pass this to a person right away."
+)
+
+# Quick-reply options attached to a baggage-guidance answer. "Connect me to a
+# human" classifies as `human_request` on the next turn, so it escalates; the
+# passenger can also simply keep describing the problem.
+BAGGAGE_OPTIONS = [
+    {"label": "Connect me to a human", "value": "I'd like to speak to a human agent about my baggage."},
+    {"label": "It's something else", "value": "Actually, my question is about something else."},
+]
+
+# Added to the system prompt when baggage guidance applies, so the model
+# relays the authoritative contact points instead of inventing them, and asks
+# whether the passenger wants a human if the guidance does not resolve it.
+BAGGAGE_INSTRUCTION = """\
+The passenger is asking about a lost, delayed, or unclaimed bag.
+
+- Relay these three options, briefly and in order (do not invent others):
+{guidance}
+- After listing them, proactively ask whether they'd like you to connect them
+  to a human agent if the bag is not found or this isn't their issue.
+- Do not ask them to call the airport themselves; offer the human handoff."""
 
 # Bounded wait for sentiment inference: a stalled model download (HF file
 # lock) must not hang the turn. The loading thread keeps running in the
@@ -63,11 +109,16 @@ Context:
 
 # Added to the system prompt when a rebooking request is detected, so the
 # model knows it may act with the tool instead of only quoting the context.
+# `{self_service_url}` is filled in at call time from settings.
 REBOOK_TOOL_INSTRUCTION = """\
 The passenger wants to rebook a flight.
 
-- You need TWO things: the booking reference/e-ticket number, and the new
-  travel date. Ask for whichever is missing, ONE at a time.
+- Offer BOTH paths once, briefly: (a) they can self-serve at
+  {self_service_url}
+  or (b) you can rebook for them right here. Then offer to do it for them.
+- To rebook in chat you need TWO things: the booking reference / e-ticket
+  number (the 13-digit ticket number or the PNR), and the new travel date.
+  Ask for whichever is missing, ONE at a time.
 - NEVER ask for the booking reference twice. If it already appears anywhere in
   the conversation (including earlier turns), reuse it silently.
 - NEVER ask for a flight number. The system chooses a flight automatically.
@@ -96,8 +147,14 @@ class AgentState(TypedDict, total=False):
     escalate: bool
     escalation_reason: str
     escalation_created: bool
+    # Soft-escalation: offer options instead of escalating outright. Set by
+    # `route`; the `offer_assistance` node builds the message and quick replies.
+    offer_escalation: bool
+    escalation_offer: dict
+    soft_offers: int  # offers already made in this conversation
     chunks: list[dict]  # RetrievedChunk as plain dicts
     flight_context: str  # rendered mock flight status/delays, when relevant
+    baggage_context: str  # rendered lost/delayed-bag guidance, when relevant
     answer: str
 
 
@@ -119,19 +176,72 @@ async def classify(state: AgentState) -> dict:
 
 
 async def route(state: AgentState) -> dict:
-    """Decide escalate vs routine. Reads conversation history from the DB."""
+    """Decide escalate vs offer vs routine. Reads conversation history from the DB.
+
+    Hard triggers (safety, explicit human request) escalate at once. Soft
+    triggers (compensation, a negative-sentiment streak, or a conversation the
+    bot cannot close) first offer the passenger options and ask, then hand off
+    after `soft_escalation_max_offers` unanswered offers.
+    """
     intent = state.get("intent", "routine")
 
-    if intent in ESCALATING_INTENTS:
+    hard_intents = set(HARD_ESCALATING_INTENTS)
+    if settings.escalate_on_compensation:
+        hard_intents |= SOFT_ESCALATING_INTENTS
+
+    if intent in hard_intents:
         reason = f"high-risk intent: {intent}"
         if state.get("intent_source") == "keyword":
             reason = "safety keyword trigger"
         return {"escalate": True, "escalation_reason": reason}
 
-    triggers = await _history_triggers(state)
-    if triggers:
-        return {"escalate": True, "escalation_reason": triggers}
-    return {"escalate": False, "escalation_reason": ""}
+    soft_reason = ""
+    if intent in SOFT_ESCALATING_INTENTS:
+        soft_reason = f"high-risk intent: {intent}"
+    if not soft_reason:
+        soft_reason = await _history_triggers(state)
+
+    if not soft_reason:
+        return {"escalate": False, "escalation_reason": ""}
+
+    # Soft trigger fired. Escalate outright when soft escalation is disabled or
+    # the passenger has already been offered options enough times.
+    if not settings.soft_escalation_enabled:
+        return {"escalate": True, "escalation_reason": soft_reason}
+    if state.get("soft_offers", 0) >= settings.soft_escalation_max_offers:
+        return {"escalate": True, "escalation_reason": soft_reason}
+    return {"offer_escalation": True, "escalation_reason": soft_reason}
+
+
+async def offer_assistance(state: AgentState) -> dict:
+    """Ask before handing off: build the options message and record the offer."""
+    import uuid
+
+    from sqlalchemy import update
+
+    from app.db import SessionLocal
+    from app.models import Conversation
+
+    conversation_id = state.get("conversation_id")
+    if conversation_id:
+        try:
+            async with SessionLocal() as db:
+                await db.execute(
+                    update(Conversation)
+                    .where(Conversation.id == uuid.UUID(str(conversation_id)))
+                    .values(soft_offers=Conversation.soft_offers + 1)
+                )
+                await db.commit()
+        except Exception:
+            logger.exception("Could not record soft-escalation offer")
+
+    return {
+        "answer": OFFER_ESCALATION_TEXT,
+        "escalation_offer": {
+            "reason": state.get("escalation_reason", ""),
+            "options": list(SOFT_ESCALATION_OPTIONS),
+        },
+    }
 
 
 async def _history_triggers(state: AgentState) -> str:
@@ -246,6 +356,17 @@ async def flight_lookup(state: AgentState) -> dict:
     return {"flight_context": context}
 
 
+async def baggage_lookup(state: AgentState) -> dict:
+    """Attach lost/delayed-bag guidance when the query is about a missing bag.
+
+    Deterministic detection and in-process content: no external call, no KB
+    lookup needed. The QA node relays the three options and offers a human.
+    """
+    if not detect_baggage_request(state.get("query", "")):
+        return {}
+    return {"baggage_context": render_guidance()}
+
+
 async def answer(state: AgentState, config=None) -> dict:
     context, _ = _format_context(state.get("chunks", []))
     system = QA_SYSTEM_PROMPT.format(context=context or "(no context)")
@@ -256,10 +377,30 @@ async def answer(state: AgentState, config=None) -> dict:
             + flight_context
         )
     rebook_request = detect_rebook_request(state.get("query", ""), state.get("history"))
+    system = QA_SYSTEM_PROMPT.format(context=context or "(no context)")
+    flight_context = state.get("flight_context")
+    if flight_context:
+        system += (
+            "\n\nLive flight information from the flight service (mock data):\n"
+            + flight_context
+        )
+    baggage_context = state.get("baggage_context")
+    if baggage_context:
+        system += "\n\n" + BAGGAGE_INSTRUCTION.format(guidance=baggage_context)
+    # The rebook instruction is appended only for the tool attempt, so the
+    # no-tools fallback below answers without re-offering tools.
+    rebook_instruction = (
+        "\n\n"
+        + REBOOK_TOOL_INSTRUCTION.format(
+            self_service_url=settings.self_service_rebooking_url
+        )
+        if rebook_request
+        else ""
+    )
     messages = [
         {
             "role": "system",
-            "content": system + (REBOOK_TOOL_INSTRUCTION if rebook_request else ""),
+            "content": system + rebook_instruction,
         },
         *state.get("history", [])[-HISTORY_TURNS_FOR_CONTEXT:],
         {"role": "user", "content": state.get("query", "")},
@@ -297,7 +438,13 @@ async def answer(state: AgentState, config=None) -> dict:
         logger.error("QA generation failed: %s", exc)
         text = "I'm sorry, I couldn't process that just now. Please try again, or I can connect you with a human agent."
 
-    return {"answer": text}
+    result: dict = {"answer": text}
+    if baggage_context:
+        result["escalation_offer"] = {
+            "reason": "lost or delayed baggage",
+            "options": [dict(option) for option in BAGGAGE_OPTIONS],
+        }
+    return result
 
 
 async def escalate(state: AgentState) -> dict:
@@ -366,8 +513,13 @@ async def escalate(state: AgentState) -> dict:
     return {"escalate": True, "escalation_created": created}
 
 
-def _should_escalate(state: AgentState) -> str:
-    return "escalate" if state.get("escalate") else "retrieve"
+def _route_next(state: AgentState) -> str:
+    """Route to the human, the soft offer, or the normal answer path."""
+    if state.get("escalate"):
+        return "escalate"
+    if state.get("offer_escalation"):
+        return "offer"
+    return "retrieve"
 
 
 def build_graph():
@@ -377,7 +529,9 @@ def build_graph():
     graph.add_node("route", route)
     graph.add_node("retrieve", retrieve)
     graph.add_node("flight_lookup", flight_lookup)
+    graph.add_node("baggage_lookup", baggage_lookup)
     graph.add_node("generate_answer", answer)
+    graph.add_node("offer_assistance", offer_assistance)
     graph.add_node("handle_escalation", escalate)
 
     graph.set_entry_point("analyse_sentiment")
@@ -385,12 +539,18 @@ def build_graph():
     graph.add_edge("classify", "route")
     graph.add_conditional_edges(
         "route",
-        _should_escalate,
-        {"escalate": "handle_escalation", "retrieve": "retrieve"},
+        _route_next,
+        {
+            "escalate": "handle_escalation",
+            "offer": "offer_assistance",
+            "retrieve": "retrieve",
+        },
     )
     graph.add_edge("retrieve", "flight_lookup")
-    graph.add_edge("flight_lookup", "generate_answer")
+    graph.add_edge("flight_lookup", "baggage_lookup")
+    graph.add_edge("baggage_lookup", "generate_answer")
     graph.add_edge("generate_answer", END)
+    graph.add_edge("offer_assistance", END)
     graph.add_edge("handle_escalation", END)
     return graph.compile()
 

@@ -40,6 +40,12 @@ export interface MessageSource {
   score?: number;
 }
 
+/** A quick-reply button on a bot message; clicking sends `value` as the reply. */
+export interface MessageAction {
+  label: string;
+  value: string;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -48,9 +54,15 @@ export interface Message {
   sentiment_score: number | null;
   sentiment_label: string | null;
   sources?: MessageSource[];
+  actions?: MessageAction[];
   created_at: string;
   /** Client-only marker for optimistically rendered (not yet echoed) messages. */
   pending?: boolean;
+}
+
+export interface EscalationOffer {
+  reason: string;
+  options: MessageAction[];
 }
 
 export interface Turn {
@@ -58,6 +70,8 @@ export interface Turn {
   bot_message: Message | null;
   escalate: boolean;
   escalation_reason: string | null;
+  offer_escalation?: boolean;
+  escalation_offer?: EscalationOffer | null;
   intent: string | null;
   sentiment_score: number | null;
   sentiment_label: string | null;
