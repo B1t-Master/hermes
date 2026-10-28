@@ -70,10 +70,17 @@ Passenger query -> **sentiment + intent** analysis -> **Router agent** ->
 - escalate -> conversation summary routed to the **human-agent dashboard**; or
 - rebook -> **rebook_flight** function calling (see below); or
 - flight status -> enriched with live (mock) data from the flight service
-  before answering.
+  before answering; or
+- lost/delayed baggage -> in-process guidance (baggage claim, Lost & Found
+  desk, WorldTracer tracking) followed by a human-agent offer.
 
 Escalation triggers: sentiment below -0.75 on 2 consecutive turns, high-risk
 intent (compensation/safety/emergency), or more than 3 unresolved turns.
+Safety and an explicit "talk to a human" escalate immediately. The softer
+triggers (negative-sentiment streak, unresolved loop, and compensation when
+`ESCALATE_ON_COMPENSATION=false`) first offer the passenger a choice — keep
+trying or connect to a person — and only hand off after
+`SOFT_ESCALATION_MAX_OFFERS` unanswered offers.
 
 **Multi-passenger isolation:** every conversation, message, and escalation is
 scoped to a `passenger_id`; the Q&A agent builds context only from that
@@ -81,11 +88,13 @@ passenger's history, so no context leaks between sessions.
 
 ## Rebooking via function calling
 
-The bot rebooks through a two-step conversation and never asks for a flight
-number (it picks one):
+Rebooking is offered two ways. The bot surfaces the official KQ self-service
+page (`SELF_SERVICE_REBOOKING_URL`) **and** offers to do it in chat, then
+rebooks through a two-step conversation and never asks for a flight number (it
+picks one):
 
-1. Passenger asks to rebook. The bot asks for the booking reference or
-   e-ticket number, once.
+1. Passenger asks to rebook. The bot asks for the booking reference, PNR, or
+   13-digit e-ticket number, once.
 2. Once it has the reference, it asks for the new travel date. Natural
    language is understood: `tomorrow`, `tomorrow afternoon`, `day after
    tomorrow`, `next Friday`, or a calendar date like `2025-04-20`.
@@ -99,6 +108,22 @@ number (it picks one):
 The rebooking conversation stays on the tool path across turns: a follow-up
 that contains only a booking reference (`HRM-9B4770`) or a date
 (`tomorrow afternoon`) is recognised as part of the flow, not a new question.
+
+## Baggage guidance
+
+Lost, delayed, and unclaimed-bag questions are answered deterministically and
+in-process (`app/agents/baggage.py`) — no external system, no LLM invention.
+The bot lists the three places to look and then asks whether the passenger
+wants a human agent:
+
+1. **Arrival baggage claim** — JKIA Terminal 1A (`BAGGAGE_ARRIVAL_CLAIM`).
+2. **Airport Lost & Found desk** — JKIA Terminal 1A (`BAGGAGE_LOST_AND_FOUND`).
+3. **WorldTracer online tracking** — `WORLDTRACER_URL`, using the bag tag or
+   baggage-receipt reference.
+
+The answer carries two quick-reply chips ("Connect me to a human" /
+"It's something else") so the next step is one click; choosing the human chip
+routes through the normal hard escalation.
 
 ## Telegram channel
 

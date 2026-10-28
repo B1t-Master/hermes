@@ -74,6 +74,7 @@ def message_to_dict(message: Message) -> dict:
         "sentiment_label": message.sentiment_label,
         "sources": message.sources or [],
         "created_at": message.created_at.isoformat() if message.created_at else None,
+        "actions": message.actions or None,
     }
 def citations_from_chunks(chunks: list) -> list[dict]:
     """Deduplicated [{title, url}] pairs from the graph's retrieved chunks.
@@ -161,6 +162,7 @@ async def run_turn(
         # not need to re-fetch the row (one fewer DB round trip per turn).
         "conversation_status": conversation.status.value,
         "conversation_turn_count": conversation.turn_count,
+        "soft_offers": conversation.soft_offers,
     }
     config = {"configurable": {"on_token": on_token}} if on_token is not None else None
     started = time.perf_counter()
@@ -185,11 +187,13 @@ async def run_turn(
         db.add(passenger_message)
         bot_message = None
         if not escalated and answer:
+            escalation_offer = result.get("escalation_offer") or {}
             bot_message = Message(
                 conversation_id=conversation_id,
                 sender=MessageSender.BOT,
                 content=answer,
                 sources=citations_from_chunks(result.get("chunks") or []),
+                actions=escalation_offer.get("options") or None,
             )
             db.add(bot_message)
         add_metric(db, conversation_id, RESPONSE_TIME_MS, response_time_ms)

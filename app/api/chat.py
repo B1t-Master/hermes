@@ -84,6 +84,8 @@ async def send_message(
         bot_message=result.get("bot_message"),
         escalate=bool(result.get("escalate")),
         escalation_reason=result.get("escalation_reason") or None,
+        offer_escalation=bool(result.get("offer_escalation")),
+        escalation_offer=result.get("escalation_offer"),
         intent=result.get("intent"),
         sentiment_score=result.get("sentiment_score"),
         sentiment_label=result.get("sentiment_label"),

@@ -2,16 +2,27 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "./api";
 import { useAuth } from "./auth";
+import ActionChips from "./ActionChips";
+import Avatar from "./Avatar";
+import Icon from "./Icon";
 import RichText from "./RichText";
 import Wings from "./Wings";
 import { formatTime } from "./format";
 import { playAgentJoinedCue, playEscalationCue } from "./sound";
-import type { Conversation, Message, ServerFrame } from "./types";
+import type { Conversation, Message, MessageAction, ServerFrame } from "./types";
 import { connectWs } from "./ws";
 import type { WsHandle, WsStatus } from "./ws";
 
 /** Show the rating prompt this long into the session, resolved or not. */
 const CSAT_PROMPT_DELAY_MS = 20_000;
+
+/** Starter prompts on an empty conversation. */
+const SUGGESTIONS: MessageAction[] = [
+  { label: "Baggage allowance", value: "What is my checked baggage allowance?" },
+  { label: "Check my flight", value: "How can I check if my flight is delayed?" },
+  { label: "Rebook a flight", value: "My flight was cancelled. How do I rebook?" },
+  { label: "Lost baggage", value: "My bag didn't arrive. What should I do?" },
+];
 
 export default function ChatWidget() {
   const { token, role, logout } = useAuth();
@@ -220,10 +231,8 @@ export default function ChatWidget() {
   const active = conversations.find((c) => c.id === activeId) ?? null;
   const resolved = active?.status === "resolved";
 
-  const send = (e: FormEvent) => {
-    e.preventDefault();
-    const content = draft.trim();
-    if (!content || !activeId || resolved) return;
+  const sendText = (content: string) => {
+    if (!content.trim() || !activeId || resolved) return;
     const optimistic: Message = {
       id: `pending-${crypto.randomUUID()}`,
       conversation_id: activeId,
@@ -236,8 +245,15 @@ export default function ChatWidget() {
     };
     setMessages((prev) => [...prev, optimistic]);
     wsRef.current?.send({ type: "user_message", content });
-    setDraft("");
     setError(null);
+  };
+
+  const send = (e: FormEvent) => {
+    e.preventDefault();
+    const content = draft.trim();
+    if (!content) return;
+    setDraft("");
+    sendText(content);
   };
 
   const newConversation = async () => {
@@ -299,17 +315,27 @@ export default function ChatWidget() {
 
         <section className="chat-thread">
           {active?.status === "escalated" && (
-            <p className="notice warn">
-              Escalated{active.escalation_reason ? `: ${active.escalation_reason}` : ""} — a
-              human agent has been notified and will reply right here.
+            <p className="notice warn with-icon">
+              <Icon name="alert" />
+              <span>
+                Escalated
+                {active.escalation_reason ? `: ${active.escalation_reason}` : ""} — a
+                human agent has been notified and will reply right here.
+              </span>
             </p>
           )}
           {resolved && (
-            <p className="notice ok">
-              This conversation was resolved. Start a new chat to continue.
+            <p className="notice ok with-icon">
+              <Icon name="check" />
+              <span>This conversation was resolved. Start a new chat to continue.</span>
             </p>
           )}
-          {error && <p className="notice error">{error}</p>}
+          {error && (
+            <p className="notice error with-icon">
+              <Icon name="alert" />
+              <span>{error}</span>
+            </p>
+          )}
 
           {activeId && (resolved || showCsat) && (
             <div className="csat">
@@ -343,69 +369,80 @@ export default function ChatWidget() {
 
           <div className="chat-body" ref={scrollRef}>
             {messages.length === 0 && streaming === null && !botThinking && (
-              <p className="placeholder">Ask about baggage, check-in, delays, refunds…</p>
+              <div className="empty-state">
+                <Wings size={44} />
+                <h2>How can we help?</h2>
+                <p>
+                  Ask about baggage, check-in, delays, rebooking, refunds, or your
+                  booking — I'll look it up and walk you through it.
+                </p>
+                <ActionChips
+                  actions={SUGGESTIONS}
+                  onSelect={sendText}
+                  className="suggestions"
+                />
+              </div>
             )}
             {messages.map((m) => (
               <div
                 key={m.id}
-                className={`message ${m.sender}${m.pending ? " pending" : ""}`}
+                className={`message-row ${m.sender}${m.pending ? " pending" : ""}`}
               >
-                <div className="meta">
-                  <strong>
-                    {m.sender === "bot" ? (
-                      <>
-                        <Wings size={15} /> hermes
-                      </>
-                    ) : (
-                      m.sender
-                    )}
-                  </strong>
-                  <span>{formatTime(m.created_at)}</span>
-                  {m.sentiment_label && m.sender === "passenger" && (
-                    <span className={`badge ${m.sentiment_label}`}>
-                      {m.sentiment_label}
-                    </span>
-                  )}
-                </div>
-                <div className="body">
-                  <RichText text={m.content} />
-                </div>
-                {m.sources && m.sources.length > 0 && (
-                  <div className="sources">
-                    {m.sources.map((s, i) => (
-                      <span
-                        key={`${s.title}-${i}`}
-                        className="source"
-                        title={s.url ?? undefined}
-                      >
-                        {s.title}
+                <Avatar
+                  kind={m.sender}
+                  name={m.sender === "bot" ? "hermes" : m.sender}
+                />
+                <div className={`message ${m.sender}${m.pending ? " pending" : ""}`}>
+                  <div className="meta">
+                    <strong>{m.sender === "bot" ? "hermes" : m.sender}</strong>
+                    <span>{formatTime(m.created_at)}</span>
+                    {m.sentiment_label && m.sender === "passenger" && (
+                      <span className={`badge ${m.sentiment_label}`}>
+                        {m.sentiment_label}
                       </span>
-                    ))}
+                    )}
                   </div>
-                )}
+                  <div className="body">
+                    <RichText text={m.content} />
+                  </div>
+                  {m.sources && m.sources.length > 0 && (
+                    <div className="sources">
+                      {m.sources.map((s, i) => (
+                        <span
+                          key={`${s.title}-${i}`}
+                          className="source"
+                          title={s.url ?? undefined}
+                        >
+                          {s.title}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <ActionChips actions={m.actions ?? []} onSelect={sendText} />
+                </div>
               </div>
             ))}
             {streaming !== null && (
-              <div className="message bot">
-                <div className="meta">
-                  <strong>hermes</strong>
-                </div>
-                <div className="body streaming">
-                  <RichText text={streaming} />
-                  <span className="caret">▌</span>
+              <div className="message-row bot">
+                <Avatar kind="bot" name="hermes" />
+                <div className="message bot">
+                  <div className="meta">
+                    <strong>hermes</strong>
+                  </div>
+                  <div className="body streaming">
+                    <RichText text={streaming} />
+                    <span className="caret">▌</span>
+                  </div>
                 </div>
               </div>
             )}
             {botThinking && streaming === null && (
-              <div className="message bot thinking">
-                <p>
-                  hermes is thinking
-                  <span className="dots" aria-hidden="true">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                </p>
+              <div className="message-row bot">
+                <Avatar kind="bot" name="hermes" />
+                <div className="message bot thinking" role="status">
+                  <span className="spinner" aria-hidden="true" />
+                  <span>hermes is thinking…</span>
+                </div>
               </div>
             )}
             {agentTyping && <p className="notice small">Agent is typing…</p>}

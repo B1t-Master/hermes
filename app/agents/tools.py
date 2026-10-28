@@ -185,9 +185,10 @@ TOOL_SPECS = [
             "description": (
                 "Rebook a passenger onto an available flight for a new travel "
                 "date. Requires the passenger's booking reference or e-ticket "
-                "number AND the new travel date (natural language like "
-                "'tomorrow' or 'tomorrow afternoon' is understood); ask for "
-                "whichever is missing instead of calling this tool. The new "
+                "number (the 13-digit ticket number or the PNR) AND the new "
+                "travel date (natural language like 'tomorrow' or 'tomorrow "
+                "afternoon' is understood); ask for whichever is missing "
+                "instead of calling this tool. The new "
                 "flight is chosen automatically. Emails a confirmation only "
                 "when the booking reference has an email address on file; the "
                 "result's `email_sent` field says whether one was sent."

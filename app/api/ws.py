@@ -23,6 +23,10 @@ Envelope: every frame is a JSON object with a ``type`` field.
       bot_error      {type, detail}           turn failed; nothing persisted
       error          {type, detail}           bad frame / permission problem
 
+  Note: a soft-escalation offer is an ordinary bot message carrying
+  ``message.actions`` ([{label, value}, ...]). Clicking one sends its ``value``
+  back as a normal ``user_message``; no dedicated frame is needed.
+
   server -> room (broadcast)
       passenger_message {type, message}        dedupe by id on the sender
       agent_message     {type, message}        dedupe by id on the sender

@@ -89,6 +89,33 @@ async def init_models() -> None:
                     "ON passengers (telegram_chat_id)"
                 )
             )
+        # conversations.soft_offers: counts soft-escalation offers already made.
+        has_soft_offers = (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM information_schema.columns "
+                    "WHERE table_name = 'conversations' AND column_name = 'soft_offers'"
+                )
+            )
+        ).scalar()
+        if not has_soft_offers:
+            await conn.execute(
+                text(
+                    "ALTER TABLE conversations "
+                    "ADD COLUMN soft_offers INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+        # messages.actions: quick-reply buttons on a bot message (JSON list).
+        has_actions = (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM information_schema.columns "
+                    "WHERE table_name = 'messages' AND column_name = 'actions'"
+                )
+            )
+        ).scalar()
+        if not has_actions:
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN actions JSON"))
         # Ticket -> confirmation email. Seeded with prototype rows; ON CONFLICT
         # keeps this idempotent and never clobbers rows added later.
         seed_email = settings.rebook_confirmation_email
