@@ -7,8 +7,10 @@ import type {
   Message,
   Metrics,
   Passenger,
+  Payment,
   QueueEscalation,
   Role,
+  SendTicketResult,
   Token,
   Turn,
 } from "./types";
@@ -95,6 +97,16 @@ export const api = {
       body: { rating },
     }),
 
+  /* in-chat M-Pesa payment card (passenger) */
+  getPayment: (token: string, paymentId: string) =>
+    request<Payment>(`/chat/payments/${paymentId}`, { token }),
+  submitPaymentPhone: (token: string, paymentId: string, phone: string) =>
+    request<Payment>(`/chat/payments/${paymentId}/phone`, {
+      method: "POST",
+      token,
+      body: { phone },
+    }),
+
   /* escalation queue (agent) */
   queue: (token: string, status = "active") =>
     request<QueueEscalation[]>(`/agents/escalations?status=${status}`, { token }),
@@ -102,6 +114,13 @@ export const api = {
   metrics: (token: string) => request<Metrics>("/agents/metrics", { token }),
   escalationMessages: (token: string, escalationId: string) =>
     request<Message[]>(`/agents/escalations/${escalationId}/messages`, { token }),
+  agentGetPayment: (token: string, paymentId: string) =>
+    request<Payment>(`/agents/payments/${paymentId}`, { token }),
+  sendTicket: (token: string, paymentId: string) =>
+    request<SendTicketResult>(`/agents/payments/${paymentId}/send-ticket`, {
+      method: "POST",
+      token,
+    }),
   claim: (token: string, escalationId: string) =>
     request<Escalation>(`/agents/escalations/${escalationId}/claim`, {
       method: "POST",

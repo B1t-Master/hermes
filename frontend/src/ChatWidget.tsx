@@ -5,11 +5,19 @@ import { useAuth } from "./auth";
 import ActionChips from "./ActionChips";
 import Avatar from "./Avatar";
 import Icon from "./Icon";
+import Memphis from "./Memphis";
+import PaymentCard from "./PaymentCard";
 import RichText from "./RichText";
 import Wings from "./Wings";
 import { formatTime } from "./format";
 import { playAgentJoinedCue, playEscalationCue } from "./sound";
-import type { Conversation, Message, MessageAction, ServerFrame } from "./types";
+import type {
+  Conversation,
+  Message,
+  MessageAction,
+  Payment,
+  ServerFrame,
+} from "./types";
 import { connectWs } from "./ws";
 import type { WsHandle, WsStatus } from "./ws";
 
@@ -47,6 +55,8 @@ export default function ChatWidget() {
   const [csat, setCsat] = useState<Record<string, number>>({});
   const [hoverRating, setHoverRating] = useState(0);
   const [showCsat, setShowCsat] = useState(false);
+  /** Latest payment_update per card, pushed over the conversation WS. */
+  const [paymentUpdates, setPaymentUpdates] = useState<Record<string, Payment>>({});
 
   /* Prompt for a rating 20s into the session, resolved or not. */
   useEffect(() => {
@@ -96,6 +106,7 @@ export default function ChatWidget() {
     setBotThinking(false);
     setAgentTyping(false);
     setError(null);
+    setPaymentUpdates({});
     agentAnnouncedRef.current = false;
 
     api.listMessages(token, cid).then(setMessages).catch(() => {
@@ -186,6 +197,9 @@ export default function ChatWidget() {
         case "resolved":
           setConvStatus(cid, "resolved");
           refreshConversations();
+          break;
+        case "payment_update":
+          setPaymentUpdates((prev) => ({ ...prev, [f.payment.id]: f.payment }));
           break;
         case "error":
           setError(f.detail);
@@ -370,6 +384,7 @@ export default function ChatWidget() {
           <div className="chat-body" ref={scrollRef}>
             {messages.length === 0 && streaming === null && !botThinking && (
               <div className="empty-state">
+                <Memphis className="memphis chat-decor" variant="chat" />
                 <Wings size={44} />
                 <h2>How can we help?</h2>
                 <p>
@@ -419,6 +434,14 @@ export default function ChatWidget() {
                     </div>
                   )}
                   <ActionChips actions={m.actions ?? []} onSelect={sendText} />
+                  {m.payment_id && token && (
+                    <PaymentCard
+                      token={token}
+                      paymentId={m.payment_id}
+                      mode="passenger"
+                      live={paymentUpdates[m.payment_id]}
+                    />
+                  )}
                 </div>
               </div>
             ))}

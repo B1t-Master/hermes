@@ -2,24 +2,16 @@
 
  * The LLM answers in markdown; rendering raw strings makes bold markers,
  * headings and bullets visible as literal characters. This renderer is a
- * tiny safe subset: it HTML-escapes everything first, then applies
- * **bold**, *italic*, `code`, auto-linked URLs, # headings, and
- * bullet/numbered lists. No raw HTML ever reaches the DOM.
+ * tiny safe subset: it applies **bold**, *italic*, `code`, auto-linked
+ * URLs, # headings, and bullet/numbered lists.
+ *
+ * Safety note: every piece of text ends up in a React text node, and React
+ * escapes text children for us. The text must therefore NOT be escaped a
+ * second time here — doing that printed apostrophes as the literal
+ * "&#39;" in the chat bubble.
  */
 
 import type { ReactNode } from "react";
-
-const ESC: Record<string, string> = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-};
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ESC[c]);
-}
 
 /** Split raw text into plain segments + URLs (so hrefs keep their entities). */
 function tokenize(src: string): Array<{ text: string; url?: string }> {
@@ -36,15 +28,15 @@ function tokenize(src: string): Array<{ text: string; url?: string }> {
   return out;
 }
 
-/** Inline markers on already-escaped text: **b**, *i*, `code`. */
-function inline(escaped: string, prefix: string): ReactNode[] {
+/** Inline markers: **b**, *i*, `code`. */
+function inline(text: string, prefix: string): ReactNode[] {
   const nodes: ReactNode[] = [];
   const re = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
   let last = 0;
   let i = 0;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(escaped))) {
-    if (m.index > last) nodes.push(escaped.slice(last, m.index));
+  while ((m = re.exec(text))) {
+    if (m.index > last) nodes.push(text.slice(last, m.index));
     const tok = m[0];
     if (tok.startsWith("**")) {
       nodes.push(<strong key={`${prefix}-b${i++}`}>{tok.slice(2, -2)}</strong>);
@@ -55,11 +47,11 @@ function inline(escaped: string, prefix: string): ReactNode[] {
     }
     last = m.index + tok.length;
   }
-  if (last < escaped.length) nodes.push(escaped.slice(last));
+  if (last < text.length) nodes.push(text.slice(last));
   return nodes;
 }
 
-/** One line -> nodes (autolinks + inline markers; text escaped). */
+/** One line -> nodes (autolinks + inline markers). */
 function line(text: string, key: string): ReactNode[] {
   const nodes: ReactNode[] = [];
   tokenize(text).forEach((tok, i) => {
@@ -70,15 +62,13 @@ function line(text: string, key: string): ReactNode[] {
         </a>,
       );
     } else {
-      nodes.push(
-        <span key={`${key}-t${i}`}>{inline(escapeHtml(tok.text), key)}</span>,
-      );
+      nodes.push(<span key={`${key}-t${i}`}>{inline(tok.text, key)}</span>);
     }
   });
   return nodes;
 }
 
-/** Block-level rendering with safe text (HTML already escaped). */
+/** Block-level rendering: paragraphs, headings and lists. */
 export default function RichText({ text }: { text: string }) {
   const blocks: ReactNode[] = [];
   let listKind: "ul" | "ol" | null = null;

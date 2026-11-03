@@ -55,9 +55,45 @@ export interface Message {
   sentiment_label: string | null;
   sources?: MessageSource[];
   actions?: MessageAction[];
+  /** In-chat M-Pesa payment card attached to a bot/agent message. */
+  payment_id?: string | null;
   created_at: string;
   /** Client-only marker for optimistically rendered (not yet echoed) messages. */
   pending?: boolean;
+}
+
+export type PaymentStatus = "pending" | "success" | "failed" | "cancelled" | "timeout";
+
+/** In-chat M-Pesa payment card state (app/schemas.py PaymentOut). */
+export interface Payment {
+  id: string;
+  conversation_id: string | null;
+  pnr: string;
+  phone: string | null;
+  phone_masked: string | null;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  receipt: string | null;
+  checkout_request_id: string | null;
+  flight_no: string | null;
+  origin: string | null;
+  destination: string | null;
+  depart_date: string | null;
+  depart_time: string | null;
+  passenger_name: string | null;
+  passenger_email: string | null;
+  booking_status: string | null;
+  eticket_number: string | null;
+  message: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface SendTicketResult {
+  payment: Payment;
+  ticket: Record<string, unknown>;
+  message: Message;
 }
 
 export interface EscalationOffer {
@@ -125,6 +161,7 @@ export type ServerFrame =
   | { type: "agent_message"; message: Message }
   | { type: "escalated"; reason: string }
   | { type: "resolved"; escalation_id: string }
+  | { type: "payment_update"; payment: Payment }
   /* dashboard broadcasts */
   | {
       type: "queue_update";

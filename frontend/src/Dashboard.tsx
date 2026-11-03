@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { FormEvent } from "react";
 import { api, ApiError } from "./api";
 import { useAuth } from "./auth";
 import Avatar from "./Avatar";
+import PaymentCard from "./PaymentCard";
 import RichText from "./RichText";
 import Wings from "./Wings";
 import { formatDate, formatTime } from "./format";
@@ -13,6 +15,7 @@ import type {
   KnowledgeDocument,
   Message,
   Metrics,
+  Payment,
   QueueEscalation,
   ServerFrame,
 } from "./types";
@@ -57,6 +60,8 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [status, setStatus] = useState<WsStatus>("connecting");
+  /** Latest payment_update per card, pushed while this agent owns the chat. */
+  const [paymentUpdates, setPaymentUpdates] = useState<Record<string, Payment>>({});
   const dashWs = useRef<WsHandle | null>(null);
   const convWs = useRef<WsHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -296,6 +301,9 @@ export default function Dashboard() {
           case "resolved":
             void reloadRef.current();
             break;
+          case "payment_update":
+            setPaymentUpdates((prev) => ({ ...prev, [f.payment.id]: f.payment }));
+            break;
           case "error":
             setError(f.detail);
             break;
@@ -386,6 +394,16 @@ export default function Dashboard() {
     } finally {
       setBusyId(null);
     }
+  };
+
+  const sendTicket = async (paymentId: string) => {
+    if (!token) return;
+    const result = await api.sendTicket(token, paymentId);
+    setPaymentUpdates((prev) => ({ ...prev, [result.payment.id]: result.payment }));
+    setTranscript((prev) =>
+      prev.some((m) => m.id === result.message.id) ? prev : [...prev, result.message],
+    );
+    void reloadRef.current();
   };
 
   const sendReply = (e: FormEvent) => {
@@ -527,63 +545,79 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {selected && (
-        <section className="transcript-panel">
-          <header>
-            <h2>
-              <span className={`badge status-${selected.status}`}>{selected.status}</span>{" "}
-              {selected.passenger_name}
-            </h2>
-            <button className="secondary" onClick={() => setSelected(null)}>
-              Close
-            </button>
-          </header>
-          <p className="reason">{selected.reason}</p>
+      {selected &&
+        /* Portalled to <body>: the drawer is a fixed overlay, and any
+         * transformed ancestor would otherwise become its containing block —
+         * which is exactly what made it float in the middle of the panel. */
+        createPortal(
+          <div className="transcript-overlay" onClick={() => setSelected(null)}>
+            <section className="transcript-panel" onClick={(e) => e.stopPropagation()}>
+              <header>
+                <h2>
+                  <span className={`badge status-${selected.status}`}>{selected.status}</span>{" "}
+                  {selected.passenger_name}
+                </h2>
+                <button className="secondary" onClick={() => setSelected(null)}>
+                  × Close
+                </button>
+              </header>
+              <p className="reason">{selected.reason}</p>
 
-          <div className="chat-body" ref={scrollRef}>
-            {transcript.length === 0 && <p className="placeholder">No messages.</p>}
-            {transcript.map((m) => (
-              <div
-                key={m.id}
-                className={`message-row ${m.sender}${m.pending ? " pending" : ""}`}
-              >
-                <Avatar
-                  kind={m.sender}
-                  name={m.sender === "bot" ? "hermes" : m.sender}
-                />
-                <div className={`message ${m.sender}${m.pending ? " pending" : ""}`}>
-                  <div className="meta">
-                    <strong>{m.sender === "bot" ? "hermes" : m.sender}</strong>
-                    <span>{formatTime(m.created_at)}</span>
+              <div className="chat-body" ref={scrollRef}>
+                {transcript.length === 0 && <p className="placeholder">No messages.</p>}
+                {transcript.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`message-row ${m.sender}${m.pending ? " pending" : ""}`}
+                  >
+                    <Avatar
+                      kind={m.sender}
+                      name={m.sender === "bot" ? "hermes" : m.sender}
+                    />
+                    <div className={`message ${m.sender}${m.pending ? " pending" : ""}`}>
+                      <div className="meta">
+                        <strong>{m.sender === "bot" ? "hermes" : m.sender}</strong>
+                        <span>{formatTime(m.created_at)}</span>
+                      </div>
+                      <div className="body">
+                        <RichText text={m.content} />
+                      </div>
+                      {m.payment_id && token && (
+                        <PaymentCard
+                          token={token}
+                          paymentId={m.payment_id}
+                          mode="agent"
+                          live={paymentUpdates[m.payment_id]}
+                          onSendTicket={isMine ? sendTicket : undefined}
+                        />
+                      )}
+                    </div>
                   </div>
-                  <div className="body">
-                    <RichText text={m.content} />
-                  </div>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          {isMine ? (
-            <form className="composer" onSubmit={sendReply}>
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Reply as support agent…"
-              />
-              <button type="submit" disabled={!draft.trim()}>
-                Send
-              </button>
-            </form>
-          ) : (
-            <p className="notice warn">
-              {selected.status === "pending"
-                ? "Claim this conversation to reply."
-                : "Read-only: another agent owns this conversation."}
-            </p>
-          )}
-        </section>
-      )}
+              {isMine ? (
+                <form className="composer" onSubmit={sendReply}>
+                  <input
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="Reply as support agent…"
+                  />
+                  <button type="submit" disabled={!draft.trim()}>
+                    Send
+                  </button>
+                </form>
+              ) : (
+                <p className="notice warn">
+                  {selected.status === "pending"
+                    ? "Claim this conversation to reply."
+                    : "Read-only: another agent owns this conversation."}
+                </p>
+              )}
+            </section>
+          </div>,
+          document.body,
+        )}
       </div>
 
       {kbMounted && (
