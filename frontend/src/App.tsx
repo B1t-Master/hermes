@@ -4,6 +4,7 @@ import { useAuth } from "./auth";
 import ChatWidget from "./ChatWidget";
 import Dashboard from "./Dashboard";
 import Logo from "./Logo";
+import authBanner from "./assets/kenya_airways_web_1200w.webp";
 
 export default function App() {
   const { token, role } = useAuth();
@@ -54,6 +55,7 @@ function AuthGate() {
           <p className="tagline">Kenya Airways passenger support</p>
         </div>
       </div>
+      <img src={authBanner} className="auth-banner" alt="" />
       <form onSubmit={submit} noValidate={false}>
         {mode === "register" && (
           <input

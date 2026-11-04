@@ -64,7 +64,47 @@ class MessageOut(BaseModel):
     sentiment_label: str | None
     sources: list[dict] | None = None
     actions: list[dict] | None = None
+    payment_id: uuid.UUID | None = None
     created_at: datetime
+
+
+class PaymentPhoneIn(BaseModel):
+    """The M-Pesa number submitted from the in-chat payment card."""
+
+    phone: str = Field(min_length=7, max_length=24)
+
+
+class PaymentEmailIn(BaseModel):
+    """Optional e-ticket email submitted from the payment card after payment."""
+
+    email: EmailStr
+
+
+class PaymentOut(BaseModel):
+    """Payment state plus the booking details the card needs to render."""
+
+    id: uuid.UUID
+    conversation_id: uuid.UUID | None = None
+    pnr: str
+    phone: str | None = None
+    phone_masked: str | None = None
+    amount: float
+    currency: str = "KES"
+    status: str
+    receipt: str | None = None
+    checkout_request_id: str | None = None
+    flight_no: str | None = None
+    origin: str | None = None
+    destination: str | None = None
+    depart_date: str | None = None
+    depart_time: str | None = None
+    passenger_name: str | None = None
+    passenger_email: str | None = None
+    booking_status: str | None = None
+    eticket_number: str | None = None
+    message: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
 
 
 class ConversationOut(BaseModel):
@@ -129,6 +169,14 @@ class TurnOut(BaseModel):
     intent: str | None = None
     sentiment_score: float | None = None
     sentiment_label: str | None = None
+
+
+class SendTicketOut(BaseModel):
+    """Result of the dashboard's Send e-ticket action."""
+
+    payment: PaymentOut
+    ticket: dict
+    message: MessageOut
 
 
 class KnowledgeDocumentOut(BaseModel):

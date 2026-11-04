@@ -54,6 +54,13 @@ Pick exactly ONE intent for the user message:
 **VERY IMPORTANT:**
 - Short greetings ("hi", "hello", "hey", "good morning", "good afternoon", "good evening", "how are you") are **routine** (polite chat), NOT human_request.
 - If the user explicitly asks "speak to a human/agent", choose **human_request**.
+- A lost, delayed or damaged bag, a missing bag, or a question about baggage
+  allowance is **routine** (it is a baggage-help question), NOT compensation.
+  Only choose compensation when the passenger explicitly asks for money back,
+  a refund, reimbursement or a voucher.
+- A flight that was cancelled, delayed or rescheduled, and a request to
+  rebook, is **routine**. Choosing compensation there hands the passenger to
+  a human before the bot has answered anything.
 
 Reply with ONLY the intent word, nothing else.
 

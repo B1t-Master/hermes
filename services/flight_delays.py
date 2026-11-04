@@ -117,6 +117,17 @@ def _connect(db_path: str | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute(_SCHEMA)
+    # Upgrade older databases that predate the `last_updated_for` column so the
+    # daily roll (which compares that column to today) can regenerate instead of
+    # returning stale 2024 data forever.
+    columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(flights)").fetchall()
+    }
+    if "last_updated_for" not in columns:
+        conn.execute(
+            "ALTER TABLE flights ADD COLUMN last_updated_for TEXT NOT NULL DEFAULT ''"
+        )
+        conn.commit()
     return conn
 
 

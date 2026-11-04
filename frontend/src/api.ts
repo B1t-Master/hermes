@@ -106,6 +106,12 @@ export const api = {
       token,
       body: { phone },
     }),
+  submitPaymentEmail: (token: string, paymentId: string, email: string) =>
+    request<Payment>(`/chat/payments/${paymentId}/email`, {
+      method: "POST",
+      token,
+      body: { email },
+    }),
 
   /* escalation queue (agent) */
   queue: (token: string, status = "active") =>

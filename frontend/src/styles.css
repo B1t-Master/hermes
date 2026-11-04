@@ -84,8 +84,7 @@ body::before {
   z-index: -1;
   pointer-events: none;
   opacity: 0.08;
-  background: url("./assets/plane-wing.svg") 60px 40px / 420px 420px repeat;
-  animation: wing-fly 20s linear infinite;
+  background: url("./assets/paw-plane-pattern.svg") repeat;
 }
 
 main {
@@ -704,7 +703,8 @@ button:disabled {
 .message .body > ol,
 .message .body > h3,
 .message .body > h4,
-.message .body > h5 {
+.message .body > h5,
+.message .body > .msg-table-wrap {
   margin-top: 0.55rem;
 }
 .message .body ul,
@@ -715,6 +715,40 @@ button:disabled {
 .message .body li {
   margin: 0.2rem 0;
   white-space: pre-wrap;
+}
+
+/* Markdown tables (flight options, itineraries) inside message bodies. */
+.message .body .msg-table-wrap {
+  margin: 0.55rem 0 0;
+  border: var(--line-thin);
+  border-radius: 10px;
+  overflow: auto;
+  background: var(--paper);
+}
+.msg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.msg-table th,
+.msg-table td {
+  padding: 0.45rem 0.7rem;
+  text-align: left;
+  white-space: nowrap;
+}
+.msg-table th {
+  background: var(--canvas);
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.msg-table tbody tr:nth-child(even) {
+  background: var(--canvas);
+}
+.msg-table tbody tr + tr td {
+  border-top: var(--line-thin);
 }
 .message .body h3,
 .message .body h4,
@@ -1321,18 +1355,65 @@ button:disabled {
 /* CSAT                                                                */
 /* ================================================================== */
 
+/* Floating prompt: it must never take part in the chat's flow, otherwise
+ * appearing 20s into a conversation pushes the thread and composer down. */
 .csat {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 5.5rem;
+  z-index: 90;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.75rem;
-  margin-top: 1.25rem;
-  padding: 0.9rem 1rem;
+  width: min(380px, calc(100vw - 2rem));
+  margin: 0;
+  padding: 0.9rem 2.4rem 0.9rem 1rem;
   background: var(--blue-soft);
   border: var(--line-thin);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-sm);
+  animation: toast-in 200ms ease-out both;
+}
+
+.csat-close {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.35rem;
+  padding: 0 0.35rem;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--ink);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.csat-close:hover {
+  background: transparent;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Escalation / resolved / error banners also float, so a status change never
+ * shifts the conversation downward. */
+.chat-notices {
+  position: fixed;
+  top: 5.5rem;
+  right: 1rem;
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: min(380px, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.chat-notices .notice {
+  margin: 0;
+  box-shadow: var(--shadow-sm);
+  pointer-events: auto;
 }
 
 .csat p {
@@ -1420,6 +1501,33 @@ textarea:focus-visible,
   width: min(360px, 38vw);
   z-index: 0;
   opacity: 0.7;
+}
+
+.auth-banner {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%) rotate(6deg);
+  width: min(520px, 52vw);
+  height: auto;
+  object-fit: contain;
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+  animation: banner-fade-in 1s ease-out both;
+  mask-image: linear-gradient(to right, transparent 0%, black 55%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 55%);
+}
+
+@keyframes banner-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(8px) rotate(6deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) rotate(6deg);
+  }
 }
 
 .chat-decor {
@@ -1626,6 +1734,20 @@ strong .wings {
     max-height: 70vh;
   }
 
+  .chat-notices {
+    top: 7rem;
+    left: 0.9rem;
+    right: 0.9rem;
+    width: auto;
+  }
+
+  .csat {
+    left: 0.9rem;
+    right: 0.9rem;
+    bottom: 5.5rem;
+    width: auto;
+  }
+
   .transcript-panel {
     width: 100vw;
   }
@@ -1636,6 +1758,14 @@ strong .wings {
     top: 18%;
     right: 50%;
     transform: translateX(50%) rotate(6deg);
+  }
+
+  .auth-banner {
+    width: min(360px, 85vw);
+    opacity: 0.45;
+    top: 18%;
+    right: 45%;
+    transform: translateX(50%) translateY(0) rotate(6deg);
   }
 }
 
@@ -1654,13 +1784,15 @@ strong .wings {
 /* ================================================================== */
 
 .pay-card {
+  overflow-x: hidden;
+
   margin-top: 0.85rem;
   padding: 0.95rem 1rem 1rem;
   background: var(--canvas);
   border: var(--line-thin);
   border-radius: var(--radius);
   box-shadow: var(--shadow-xs);
-  width: min(100%, 460px);
+  width: min(100%);
 }
 
 .pay-card-loading {
@@ -1776,9 +1908,12 @@ strong .wings {
 .pay-row {
   display: flex;
   gap: 0.45rem;
+  flex-wrap: wrap;
 }
 
 .pay-row input {
+  word-break: break-word;
+
   flex: 1;
   min-width: 0;
   padding: 0.55rem 0.65rem;
@@ -1819,6 +1954,7 @@ strong .wings {
 .pay-wait,
 .pay-success {
   display: flex;
+  flex-direction: column;
   gap: 0.65rem;
   align-items: flex-start;
   margin-top: 0.8rem;

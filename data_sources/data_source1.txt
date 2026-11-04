@@ -1,3 +1,48 @@
+# Kenya Airways support corpus.
+#
+# Every URL below was fetched and checked: the pages listed here return real
+# content (and, where relevant, the tables that the text extractor drops).
+# The KQ help section is a JavaScript app, so some of its pages only return a
+# "requires JavaScript" interlude - those are deliberately absent.
+#
+# Re-check with:  .venv/bin/python tools/probe_sources.py
+
+# --- Baggage -------------------------------------------------------------
+https://www.kenya-airways.com/en-ke/plan/baggage-information/baggage-allowance/
+https://www.kenya-airways.com/en-ke/plan/baggage-information/hand-baggage/
+https://www.kenya-airways.com/en-ke/plan/baggage-information/delayed-baggage/
+https://www.kenya-airways.com/en-ke/plan/baggage-information/lost-and-found-items/
+https://www.kenya-airways.com/en-ke/plan/baggage-information/baggage-restrictions/
+https://www.kenya-airways.com/en-ke/plan/baggage-information/special-baggage/
+https://www.kenya-airways.com/en-ke/plan/baggage-information/conditions-of-carriage-baggage/
+https://www.kenya-airways.com/en-ke/plan/baggage-information/pet-carriage/
+
+# --- Check-in and the airport --------------------------------------------
+https://www.kenya-airways.com/en-ke/book-manage/post-booking/check-in/
+https://www.kenya-airways.com/en-ke/book-manage/post-booking/check-in/baggage-drop-off/
+https://www.kenya-airways.com/en-ke/experience/at-the-airport/baggage-drop-off/
+https://www.kenya-airways.com/en-ke/experience/at-the-airport/kiosk-check-in/
+https://www.kenya-airways.com/en-ke/experience/at-the-airport/lounge-services/
+
+# --- Managing a booking ---------------------------------------------------
+https://www.kenya-airways.com/en-ke/book-manage/manage-booking/
+https://www.kenya-airways.com/en-ke/book-manage/manage-booking/change-booking/
+https://www.kenya-airways.com/en-ke/book-manage/manage-booking/cancel-flight/
+https://www.kenya-airways.com/en-ke/book-manage/manage-booking/online-refunds/
+https://www.kenya-airways.com/en-ke/book-manage/manage-booking/request-for-your-refund/
+https://www.kenya-airways.com/en-ke/book-manage/manage-booking/upgrade-flight/
+https://www.kenya-airways.com/en-ke/book-manage/self-rebooking-service/
+
+# --- Policy and help ------------------------------------------------------
+https://www.kenya-airways.com/en-ke/policies/24-hours-refund-policy/
 https://www.kenya-airways.com/en-ke/help/faqs/
+https://www.kenya-airways.com/en-ke/help/customer-help/
+
+# --- Travelling with children and infants --------------------------------
+https://www.kenya-airways.com/en-ke/plan/special-care/infant-toddlers/
+https://www.kenya-airways.com/en-ke/plan/special-care/unaccompanied-minors/
+
+# --- Travel information and contact --------------------------------------
 https://www.kenya-airways.com/en-ke/plan/travel-information/travel-requirements/
-https://www.kenya-airways.com/en-ke/
+https://www.kenya-airways.com/en-ke/plan/travel-information/
+https://www.kenya-airways.com/en-ke/contact/

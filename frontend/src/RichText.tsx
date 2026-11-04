@@ -68,11 +68,29 @@ function line(text: string, key: string): ReactNode[] {
   return nodes;
 }
 
-/** Block-level rendering: paragraphs, headings and lists. */
+/** "| a | b |" -> ["a", "b"] (leading/trailing pipes dropped, cells trimmed). */
+function tableCells(raw: string): string[] {
+  return raw
+    .replace(/^\s*\|/, "")
+    .replace(/\|\s*$/, "")
+    .split("|")
+    .map((c) => c.trim());
+}
+
+/** A markdown separator row: every cell is only dashes (with optional colons). */
+function isSeparatorRow(cells: string[]): boolean {
+  return cells.length > 0 && cells.every((c) => /^:?-{2,}:?$/.test(c));
+}
+
+/** A full table row: starts and ends with a pipe and has content between. */
+const TABLE_ROW_RE = /^\s*\|.+\|\s*$/;
+
+/** Block-level rendering: paragraphs, headings, lists and tables. */
 export default function RichText({ text }: { text: string }) {
   const blocks: ReactNode[] = [];
   let listKind: "ul" | "ol" | null = null;
   let items: Array<{ key: string; node: ReactNode }> = [];
+  let tableLines: string[] = [];
 
   const flushList = () => {
     if (listKind === null || items.length === 0) return;
@@ -88,7 +106,47 @@ export default function RichText({ text }: { text: string }) {
     listKind = null;
   };
 
+  const flushTable = () => {
+    if (tableLines.length === 0) return;
+    const rows = tableLines
+      .map(tableCells)
+      .filter((cells) => !isSeparatorRow(cells));
+    tableLines = [];
+    if (rows.length === 0) return;
+    const [header, ...body] = rows;
+    const tid = `tbl-${blocks.length}`;
+    blocks.push(
+      <div className="msg-table-wrap" key={tid}>
+        <table className="msg-table">
+          <thead>
+            <tr>
+              {header.map((cell, i) => (
+                <th key={`${tid}-h${i}`}>{line(cell, `${tid}-h${i}`)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {body.map((row, r) => (
+              <tr key={`${tid}-r${r}`}>
+                {row.map((cell, i) => (
+                  <td key={`${tid}-r${r}c${i}`}>{line(cell, `${tid}-r${r}c${i}`)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>,
+    );
+  };
+
   text.split("\n").forEach((raw, idx) => {
+    if (TABLE_ROW_RE.test(raw)) {
+      flushList();
+      tableLines.push(raw);
+      return;
+    }
+    flushTable();
+
     const bullet = /^\s*[-*•]\s+(.*)$/.exec(raw);
     const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(raw);
     const listMatch = bullet ?? numbered;
@@ -121,6 +179,7 @@ export default function RichText({ text }: { text: string }) {
     blocks.push(<p key={`p${idx}`}>{line(trimmed, `p${idx}`)}</p>);
   });
   flushList();
+  flushTable();
 
   return <>{blocks}</>;
 }

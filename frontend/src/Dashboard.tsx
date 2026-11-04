@@ -426,6 +426,15 @@ export default function Dashboard() {
   };
 
   /* ---- render ---------------------------------------------------------------- */
+  /* Only the first message carrying a payment id renders its card, so status
+   * and ticket messages never add a duplicate card to the transcript. */
+  const cardOwners = new Map<string, string>();
+  for (const message of transcript) {
+    if (message.payment_id && !cardOwners.has(message.payment_id)) {
+      cardOwners.set(message.payment_id, message.id);
+    }
+  }
+
   return (
     <main className="dashboard">
       <header>
@@ -582,7 +591,7 @@ export default function Dashboard() {
                       <div className="body">
                         <RichText text={m.content} />
                       </div>
-                      {m.payment_id && token && (
+                      {m.payment_id && token && cardOwners.get(m.payment_id) === m.id && (
                         <PaymentCard
                           token={token}
                           paymentId={m.payment_id}

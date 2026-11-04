@@ -209,13 +209,12 @@ async def _handle_passenger_turn(ws: WebSocket, conversation_id: uuid.UUID, data
     # Telegram adapter uses, so an escalation lands on the dashboard either way.
     await notify_turn(conversation_id, result)
 
-    if result.get("escalate"):
-        # No bot answer on the escalation path; acknowledge the turn anyway.
-        await ws.send_json(_event("bot_done", message=None))
-        return
-
     if result.get("bot_message"):
+        # The escalation path answers too (the hand-off acknowledgement), so the
+        # passenger is never left with an empty screen.
         await ws.send_json(_event("bot_done", message=result["bot_message"]))
+    elif result.get("escalate"):
+        await ws.send_json(_event("bot_done", message=None))
     else:
         await ws.send_json(_event("bot_error", detail="no answer generated"))
 

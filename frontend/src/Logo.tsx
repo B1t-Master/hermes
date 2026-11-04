@@ -1,7 +1,9 @@
+import logoUrl from "./assets/Kenya_Airways-Logo.svg";
+
 const Logo = ({ size = 40 }: { size?: number }) => {
   return (
     <img
-      src="/src/assets/Kenya_Airways-Logo.svg"
+      src={logoUrl}
       alt="Kenya Airways"
       width={size}
       height={size}

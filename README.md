@@ -19,6 +19,60 @@ sentiment, with a streaming LLM via Groq or DeepSeek.
 - **Email:** Resend for rebooking confirmations, with a local outbox fallback
 - **Flight data:** SQLite schedule (`.flights.sqlite`) served through a mock MCP server
 
+## Docker quick start
+
+With Docker Engine and the Docker Compose plugin installed:
+
+```bash
+cp .env.example .env  # Skip if you already have a configured .env
+# Set GROQ_API_KEY (or DEEPSEEK_API_KEY) in .env.
+docker compose up --build -d
+```
+
+Open http://localhost:5173 for the frontend. The backend API documentation is
+at http://localhost:8000/docs. Compose starts PostgreSQL 16 with pgvector,
+waits for the database and backend health checks, and serves the built React
+app through Nginx, including API and WebSocket forwarding.
+
+The first build installs the CPU ML dependencies; the first backend startup
+downloads the embedding and sentiment models and can take several minutes.
+Follow progress with `docker compose logs -f backend`. The containers need
+internet access for model downloads and external LLM requests.
+
+The knowledge base is populated automatically on every start by the one-shot
+`kb-init` service. It syncs the bundled documents from the image into the
+writable `knowledge_sources` volume, then parses and embeds every source.
+Unchanged documents are skipped by content hash, so subsequent starts are
+cheap. If a remote URL is unavailable, it logs a warning and the API still
+starts with whatever was ingested. Follow its progress with:
+
+```bash
+docker compose logs -f kb-init
+```
+
+To force a full re-embed, or rebuild the corpus from scratch:
+
+```bash
+docker compose run --rm kb-init python -m ingest.run --embed --force
+docker compose run --rm kb-init python -m ingest.run --embed --reset
+```
+
+The backend reads your existing `.env`, with `DATABASE_URL` overridden to use
+the Compose database. Secrets are supplied at runtime and excluded from image
+builds. PostgreSQL data, the flight SQLite database, email outbox, model cache,
+and knowledge source uploads persist in named volumes. Existing host database
+contents are not imported automatically. Bundled source documents are refreshed
+from the image on every start; files uploaded through the dashboard stay in the
+volume.
+
+```bash
+docker compose down       # Stop services; keep stored data
+docker compose up -d      # Start again
+```
+
+Ports 5173 and 8000 are bound to localhost. These defaults are intended for
+local use; change the example credentials in `.env` before sharing access.
+
 ## Quick start
 
 1. **Prerequisites**: Local PostgreSQL 16+ with `pgvector` extension
@@ -76,31 +130,101 @@ Passenger query -> **sentiment + intent** analysis -> **Router agent** ->
 
 Escalation triggers: sentiment below -0.75 on 2 consecutive turns, high-risk
 intent (compensation/safety/emergency), or more than 3 unresolved turns.
-Safety and an explicit "talk to a human" escalate immediately. The softer
-triggers (negative-sentiment streak, unresolved loop, and compensation when
-`ESCALATE_ON_COMPENSATION=false`) first offer the passenger a choice — keep
-trying or connect to a person — and only hand off after
-`SOFT_ESCALATION_MAX_OFFERS` unanswered offers.
+Safety and an explicit "talk to a human" escalate immediately — and the bot
+still sends an acknowledgement, so the passenger is never left staring at
+silence. Every other trigger is soft: the bot answers the question first and
+attaches a "Connect me to a human" quick reply *beside* the answer, and only
+hands off after `SOFT_ESCALATION_MAX_OFFERS` unanswered offers.
+`ESCALATE_ON_COMPENSATION` (default `false`) decides whether a compensation
+or refund request is answered-with-an-offer or escalated outright.
 
 **Multi-passenger isolation:** every conversation, message, and escalation is
 scoped to a `passenger_id`; the Q&A agent builds context only from that
 passenger's history, so no context leaks between sessions.
 
+## Passenger memory
+
+Slots the passenger has given (`app/agents/facts.py`) persist on
+`Conversation.facts` and are injected into every later turn as the *known
+passenger context*: booking reference, contact email and phone, travel date,
+flight numbers, route, bag-tracking reference, and the rebooking confirmation
+reference.
+
+Two rules keep the memory honest:
+
+- **Only the passenger's own words fill a slot.** The bot may fill an empty
+  slot from its own messages, but it never overwrites something the passenger
+  said, and a *confirmation* reference (`HRM-…`) is kept apart from the
+  passenger's *booking* reference.
+- **A successful rebooking is authoritative.** The tool result (ticket, new
+  confirmation reference, flight, date, route) is written straight into
+  memory, so "what's my ticket number?" after a rebooking is answered from
+  the booking instead of being re-parsed out of the bot's prose.
+
+A booking reference is what most passengers call their ticket number, so
+"what's my ticket number?" is answered with the reference on file rather than
+asking for a 13-digit e-ticket number the passenger already gave.
+
+## Booking & M-Pesa payment (card-first)
+
+The booking flow never asks for an M-Pesa number in chat. The bot collects the
+route, date and flight, then `create_booking` creates a **held booking plus a
+pending payment row** and returns a `payment_id`. It does **not** contact
+M-Pesa. The bot reply carries that id, and the chat renders an **M-Pesa payment
+card** under the first message that references it.
+
+The card collects the number and posts it browser → backend at
+`POST /chat/payments/{id}/phone`. That endpoint calls
+`app.agents.payments.start_payment()`, which normalises the number, sends the
+STK push and schedules a background poller. Keeping every push on this path
+means the poller and the success handler always run; the number never enters
+the LLM prompt.
+
+After payment succeeds, the same card offers an optional e-ticket email field.
+`POST /chat/payments/{id}/email` stores it on the booking without issuing the
+ticket; the agent's ticket send emails a copy when it is set. If the ticket was
+already issued before the address was supplied, the endpoint emails the existing
+e-ticket as a copy. The address never enters the chat or the LLM prompt.
+
+Payment resolution has two paths:
+
+- **Callback** — `POST /daraja/callback` (the path must not contain "mpesa")
+  resolves the payment by Daraja checkout id.
+- **Polling** — the background poller queries Daraja every
+  `MPESA_STK_QUERY_INTERVAL_SECONDS` for `MPESA_STK_QUERY_MAX_ATTEMPTS`
+  (defaults: 2s × 60 = 120s). This is the reliable path when no public callback
+  URL is configured. If the poll budget expires first, a **late `success`
+  callback still overrides the stored `timeout`**.
+
+A success marks the booking paid, writes a bot "Payment received" notice, and
+escalates the conversation to the human queue for ticketing. The notice carries
+no `payment_id`, so it does not add a second card. Only the initial booking
+message owns the card in both the passenger and agent transcripts. The agent
+issues the e-ticket from the dashboard; that flips the booking to `ticketed`
+and a `payment_update` refreshes the open card in place.
+
+`MPESA_PROVIDER=simulated` exercises the whole flow without a phone: a prompt
+resolves after `MPESA_SIMULATE_DELAY_SECONDS`, numbers ending `0000` fail and
+`1111` cancel. `auto` uses Daraja when the four credentials are set.
+
 ## Rebooking via function calling
 
 Rebooking is offered two ways. The bot surfaces the official KQ self-service
 page (`SELF_SERVICE_REBOOKING_URL`) **and** offers to do it in chat, then
-rebooks through a two-step conversation and never asks for a flight number (it
+rebooks through a short conversation and never asks for a flight number (it
 picks one):
 
 1. Passenger asks to rebook. The bot asks for the booking reference, PNR, or
    13-digit e-ticket number, once.
-2. Once it has the reference, it asks for the new travel date. Natural
-   language is understood: `tomorrow`, `tomorrow afternoon`, `day after
-   tomorrow`, `next Friday`, or a calendar date like `2025-04-20`.
-3. With both in hand, the `rebook_flight` tool runs: it selects a flight from
-   `.flights.sqlite`, records the rebooking in a `rebookings` table in the same
-   database, and returns a confirmation reference.
+2. If the passenger named a date, that date is used: natural language is
+   understood (`tomorrow`, `tomorrow afternoon`, `day after tomorrow`, `next
+   Friday`, or a calendar date like `2025-04-20`). If they did not, the bot
+   rebooks them onto the **next available flight** — matching KQ's automatic
+   rebooking of disrupted flights — and says which flight and date they were
+   moved to, so they can ask for a different one.
+3. With the reference in hand, the `rebook_flight` tool runs: it selects a
+   flight from `.flights.sqlite`, records the rebooking in a `rebookings` table
+   in the same database, and returns a confirmation reference (`HRM-…`).
 4. If the booking reference has an email address on file (the
    `rebook_email_map` table), a confirmation is emailed via Resend. An unknown
    reference still rebooks, but no email is sent and the result says so.

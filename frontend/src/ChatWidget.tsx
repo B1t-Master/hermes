@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "./api";
 import { useAuth } from "./auth";
@@ -26,6 +26,7 @@ const CSAT_PROMPT_DELAY_MS = 20_000;
 
 /** Starter prompts on an empty conversation. */
 const SUGGESTIONS: MessageAction[] = [
+  { label: "Book a flight", value: "I want to book a flight." },
   { label: "Baggage allowance", value: "What is my checked baggage allowance?" },
   { label: "Check my flight", value: "How can I check if my flight is delayed?" },
   { label: "Rebook a flight", value: "My flight was cancelled. How do I rebook?" },
@@ -55,14 +56,19 @@ export default function ChatWidget() {
   const [csat, setCsat] = useState<Record<string, number>>({});
   const [hoverRating, setHoverRating] = useState(0);
   const [showCsat, setShowCsat] = useState(false);
+  const [csatDismissed, setCsatDismissed] = useState(false);
   /** Latest payment_update per card, pushed over the conversation WS. */
   const [paymentUpdates, setPaymentUpdates] = useState<Record<string, Payment>>({});
 
-  /* Prompt for a rating 20s into the session, resolved or not. */
+  /* Prompt for a rating 20s into the session, resolved or not. The prompt
+   * resets for every conversation so a dismissed or already-rated chat
+   * never nags again in the next one. */
   useEffect(() => {
+    setShowCsat(false);
+    setCsatDismissed(false);
     const timer = window.setTimeout(() => setShowCsat(true), CSAT_PROMPT_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [activeId]);
 
   const showToast = (text: string) => {
     setToast(text);
@@ -242,6 +248,19 @@ export default function ChatWidget() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, streaming, botThinking]);
 
+  /* Only the first message that references a payment owns the in-chat card;
+   * later mentions (success notices, agent echoes) must not render a second
+   * card for the same payment. */
+  const cardOwners = useMemo(() => {
+    const owners = new Map<string, string>();
+    for (const m of messages) {
+      if (m.payment_id && !owners.has(m.payment_id)) {
+        owners.set(m.payment_id, m.id);
+      }
+    }
+    return owners;
+  }, [messages]);
+
   const active = conversations.find((c) => c.id === activeId) ?? null;
   const resolved = active?.status === "resolved";
 
@@ -312,6 +331,73 @@ export default function ChatWidget() {
         </div>
       )}
 
+      {/* Status banners float over the chat instead of sitting in its flow,
+       * so an escalation/resolve/error never pushes the thread or composer
+       * down. */}
+      <div className="chat-notices" aria-live="polite">
+        {active?.status === "escalated" && (
+          <p className="notice warn with-icon">
+            <Icon name="alert" />
+            <span>
+              Escalated
+              {active.escalation_reason ? `: ${active.escalation_reason}` : ""} — a
+              human agent has been notified and will reply right here.
+            </span>
+          </p>
+        )}
+        {resolved && (
+          <p className="notice ok with-icon">
+            <Icon name="check" />
+            <span>This conversation was resolved. Start a new chat to continue.</span>
+          </p>
+        )}
+        {error && (
+          <p className="notice error with-icon">
+            <Icon name="alert" />
+            <span>{error}</span>
+          </p>
+        )}
+        {agentTyping && <p className="notice small">Agent is typing…</p>}
+      </div>
+
+      {activeId && !csatDismissed && (resolved || showCsat || csat[activeId]) && (
+        <div className="csat" role="dialog" aria-label="Rate this conversation">
+          <button
+            type="button"
+            className="csat-close"
+            onClick={() => setCsatDismissed(true)}
+            aria-label="Dismiss rating"
+          >
+            ×
+          </button>
+          {csat[activeId] ? (
+            <p className="placeholder">Thanks for the feedback: {csat[activeId]}/5.</p>
+          ) : (
+            <>
+              <p>How did we do?</p>
+              <div className="stars" onMouseLeave={() => setHoverRating(0)}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`star${n <= hoverRating ? " on" : ""}`}
+                    aria-label={`${n} star${n > 1 ? "s" : ""}`}
+                    onMouseEnter={() => setHoverRating(n)}
+                    onFocus={() => setHoverRating(n)}
+                    onClick={() => rateActive(n)}
+                  >
+                    ★
+                  </button>
+                ))}
+                {hoverRating > 0 && (
+                  <span className="csat-hover">{hoverRating}/5</span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="chat-layout">
         <aside className="conv-list">
           <button onClick={newConversation}>+ New chat</button>
@@ -328,59 +414,6 @@ export default function ChatWidget() {
         </aside>
 
         <section className="chat-thread">
-          {active?.status === "escalated" && (
-            <p className="notice warn with-icon">
-              <Icon name="alert" />
-              <span>
-                Escalated
-                {active.escalation_reason ? `: ${active.escalation_reason}` : ""} — a
-                human agent has been notified and will reply right here.
-              </span>
-            </p>
-          )}
-          {resolved && (
-            <p className="notice ok with-icon">
-              <Icon name="check" />
-              <span>This conversation was resolved. Start a new chat to continue.</span>
-            </p>
-          )}
-          {error && (
-            <p className="notice error with-icon">
-              <Icon name="alert" />
-              <span>{error}</span>
-            </p>
-          )}
-
-          {activeId && (resolved || showCsat) && (
-            <div className="csat">
-              {csat[activeId] ? (
-                <p className="placeholder">Thanks for the feedback: {csat[activeId]}/5.</p>
-              ) : (
-                <>
-                  <p>How did we do?</p>
-                  <div className="stars" onMouseLeave={() => setHoverRating(0)}>
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        className={`star${n <= hoverRating ? " on" : ""}`}
-                        aria-label={`${n} star${n > 1 ? "s" : ""}`}
-                        onMouseEnter={() => setHoverRating(n)}
-                        onFocus={() => setHoverRating(n)}
-                        onClick={() => rateActive(n)}
-                      >
-                        ★
-                      </button>
-                    ))}
-                    {hoverRating > 0 && (
-                      <span className="csat-hover">{hoverRating}/5</span>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
           <div className="chat-body" ref={scrollRef}>
             {messages.length === 0 && streaming === null && !botThinking && (
               <div className="empty-state">
@@ -434,7 +467,7 @@ export default function ChatWidget() {
                     </div>
                   )}
                   <ActionChips actions={m.actions ?? []} onSelect={sendText} />
-                  {m.payment_id && token && (
+                  {m.payment_id && token && cardOwners.get(m.payment_id) === m.id && (
                     <PaymentCard
                       token={token}
                       paymentId={m.payment_id}
@@ -468,7 +501,6 @@ export default function ChatWidget() {
                 </div>
               </div>
             )}
-            {agentTyping && <p className="notice small">Agent is typing…</p>}
           </div>
 
           <form className="composer" onSubmit={send}>

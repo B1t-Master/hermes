@@ -68,12 +68,7 @@ export default function PaymentCard({
   onSendTicket,
 }: PaymentCardProps) {
   const [payment, setPayment] = useState<Payment | null>(null);
-  const [phone, setPhone] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-
+  const [phone, setPhone] = useState("");  const [email, setEmail] = useState("");  const [error, setError] = useState<string | null>(null);  const [submitting, setSubmitting] = useState(false);  const [emailSubmitting, setEmailSubmitting] = useState(false);  const [sending, setSending] = useState(false);  const [sent, setSent] = useState(false);
   const load = useCallback(async () => {
     try {
       const next =
@@ -91,6 +86,7 @@ export default function PaymentCard({
   useEffect(() => {
     setPayment(null);
     setPhone("");
+    setEmail("");
     setError(null);
     setSent(false);
     void load();
@@ -133,6 +129,27 @@ export default function PaymentCard({
     }
   }
 
+
+  async function submitEmail(event: FormEvent) {
+    event.preventDefault();
+    const value = email.trim();
+    if (!value) {
+      setError("Enter the email address that should receive the e-ticket.");
+      return;
+    }
+    setEmailSubmitting(true);
+    setError(null);
+    try {
+      const next = await api.submitPaymentEmail(token, paymentId, value);
+      setPayment(next);
+      setEmail("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not save the email.");
+    } finally {
+      setEmailSubmitting(false);
+    }
+  }
+
   async function sendTicket() {
     if (!onSendTicket) return;
     setSending(true);
@@ -147,6 +164,8 @@ export default function PaymentCard({
       setSending(false);
     }
   }
+
+  
 
   if (!payment) {
     return (
@@ -201,6 +220,12 @@ export default function PaymentCard({
             <dd>{payment.receipt}</dd>
           </div>
         )}
+        {payment.passenger_email && (
+          <div>
+            <dt>Email</dt>
+            <dd>{payment.passenger_email}</dd>
+          </div>
+        )}
         {payment.eticket_number && (
           <div>
             <dt>E-ticket</dt>
@@ -225,7 +250,7 @@ export default function PaymentCard({
             </div>
           )}
 
-          {(!pending || canRetry) && (
+          {(!pending || canRetry) && !paid && (
             <form className="pay-form" onSubmit={submitPhone}>
               <label htmlFor={`phone-${payment.id}`}>M-Pesa number</label>
               <div className="pay-row">
@@ -237,9 +262,9 @@ export default function PaymentCard({
                   placeholder="0712 345 678"
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
-                  disabled={submitting || paid}
+                  disabled={submitting}
                 />
-                <button type="submit" disabled={submitting || paid}>
+                <button type="submit" disabled={submitting}>
                   {submitting
                     ? "Sending…"
                     : canRetry
@@ -258,6 +283,38 @@ export default function PaymentCard({
               <strong>Payment received</strong>
               <p>{payment.message || "An agent is preparing your e-ticket."}</p>
             </div>
+          )}
+
+          {paid && !payment.passenger_email && (
+            <form className="pay-form" onSubmit={submitEmail} style={{ marginTop: 1.5 }}>
+              <label htmlFor={`email-${payment.id}`}>
+                Email for your e-ticket (optional)
+              </label>
+              <div className="pay-row">
+                <input
+                  id={`email-${payment.id}`}
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  disabled={emailSubmitting}
+                />
+                <button type="submit" disabled={emailSubmitting || !email.trim()}>
+                  {emailSubmitting ? "Saving…" : "Email copy"}
+                </button>
+              </div>
+              <p className="pay-note">
+                We'll email a copy of the e-ticket. It never appears in the chat.
+              </p>
+            </form>
+          )}
+
+          {paid && payment.passenger_email && (
+            <p className="pay-note">
+              We'll email your e-ticket to {payment.passenger_email}.
+            </p>
           )}
         </>
       )}
