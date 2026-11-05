@@ -399,6 +399,11 @@ async def _history_triggers(state: AgentState) -> str:
     if not conversation_id:
         return ""
 
+    # While we are waiting for the passenger's email address, never
+    # escalate — the next turn is the email capture, not a new issue.
+    if (state.get("facts") or {}).get("needs_email"):
+        return ""
+
     import uuid
 
     from sqlalchemy import select

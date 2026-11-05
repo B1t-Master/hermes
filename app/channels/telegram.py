@@ -158,7 +158,10 @@ class TelegramAPI:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._base = f"{base_url.rstrip('/')}/bot{token}"
-        self._client = client or httpx.AsyncClient(timeout=timeout)
+        self._client = client or httpx.AsyncClient(
+            timeout=timeout,
+            limits=httpx.Limits(max_connections=1, max_keepalive_connections=0),
+        )
         self._owns_client = client is None
 
     async def _call(self, method: str, payload: dict) -> object:
@@ -292,6 +295,7 @@ class TelegramChannel:
             logger.info("Telegram channel ready as @%s", (me or {}).get("username"))
         except Exception:
             logger.warning("Telegram: getMe failed", exc_info=True)
+        await self._rejoin_rooms()
         self._task = asyncio.create_task(self._poll_loop(), name="telegram-poll")
         logger.info("Telegram channel started (long polling)")
 
@@ -313,13 +317,56 @@ class TelegramChannel:
 
     # -- polling ---------------------------------------------------------
 
+    async def _rejoin_rooms(self) -> None:
+        """Re-attach sinks to open Telegram conversations after a restart.
+
+        The conversation hub is in-process and its room members vanish when
+        the backend restarts. Without this, an agent reply is broadcast to a
+        room the adapter is not part of and is silently dropped until the
+        passenger happens to send another message.
+        """
+        try:
+            async with SessionLocal() as db:
+                rows = (
+                    await db.execute(
+                        select(Conversation.id, Passenger.telegram_chat_id)
+                        .join(Passenger, Passenger.id == Conversation.passenger_id)
+                        .where(
+                            Passenger.telegram_chat_id.isnot(None),
+                            Conversation.status != ConversationStatus.RESOLVED,
+                        )
+                    )
+                ).all()
+        except Exception:
+            logger.exception("Telegram: failed to load open conversations for rejoin")
+            return
+        for conversation_id, chat_id in rows:
+            if not chat_id:
+                continue
+            self._join_room(conversation_id, int(chat_id))
+        logger.info("Telegram rejoined %d open conversation(s)", len(rows))
+
     async def _poll_loop(self) -> None:
+        logger.info("Poll loop starting")
         offset = 0
         while not self._closed:
+            logger.debug("Polling for updates (offset=%d)", offset)
             try:
                 updates = await self._api.get_updates(offset, timeout=self._poll_timeout)
             except asyncio.CancelledError:
                 raise
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 409:
+                    # Another getUpdates connection is still active on
+                    # Telegram's side (usually a stale long-poll from a
+                    # previous instance). Wait for it to expire before
+                    # retrying, rather than hammering the API.
+                    logger.warning("Telegram 409 Conflict; waiting 30s for stale connection to expire")
+                    await asyncio.sleep(30)
+                    continue
+                logger.exception("Telegram getUpdates failed; retrying in 3s")
+                await asyncio.sleep(3)
+                continue
             except Exception:
                 logger.exception("Telegram getUpdates failed; retrying in 3s")
                 await asyncio.sleep(3)
@@ -370,6 +417,15 @@ class TelegramChannel:
             # conversation the human agent owns the reply.
             if result.get("escalation_created"):
                 await self._send_text(chat_id, ESCALATION_NOTICE)
+            else:
+                # Already escalated: acknowledge the message so the passenger
+                # is not left staring at a typing indicator with no reply.
+                await self._send_text(
+                    chat_id,
+                    "Your conversation has been escalated to a human agent — "
+                    "they'll reply here as soon as they can. You can keep "
+                    "typing; your messages go straight to them.",
+                )
             return
 
         bot = result.get("bot_message")
