@@ -6,35 +6,35 @@
   "judge_coverage": 1.0,
   "results": {
     "recall_at_3": [
-      0.2,
+      1.0,
+      0.5,
+      0.5,
+      1.0,
+      0.5,
+      1.0,
+      1.0,
       0.3333333333333333,
-      0.09375,
-      0.2727272727272727,
-      0.16666666666666666,
-      0.6,
-      0.0967741935483871,
-      0.10714285714285714,
-      0.3,
-      0.3333333333333333,
-      0.16666666666666666,
-      0.14285714285714285,
-      0.07142857142857142,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
       null
     ],
     "precision_at_3": [
-      1.0,
       0.6666666666666666,
-      1.0,
-      1.0,
-      0.6666666666666666,
-      1.0,
-      1.0,
-      1.0,
-      1.0,
-      1.0,
+      0.3333333333333333,
       0.3333333333333333,
       0.6666666666666666,
       0.3333333333333333,
+      0.3333333333333333,
+      0.3333333333333333,
+      0.3333333333333333,
+      0.3333333333333333,
+      0.3333333333333333,
+      0.0,
+      0.3333333333333333,
+      0.0,
       null
     ],
     "hit_rate_at_3": [
@@ -48,25 +48,25 @@
       1.0,
       1.0,
       1.0,
+      0.0,
       1.0,
-      1.0,
-      1.0,
+      0.0,
       null
     ],
     "mrr": [
       1.0,
       1.0,
       1.0,
+      0.5,
       1.0,
       1.0,
       1.0,
       1.0,
       1.0,
       1.0,
-      1.0,
-      1.0,
-      1.0,
-      1.0,
+      0.0,
+      0.3333333333333333,
+      0.0,
       null
     ],
     "faithfulness": [
@@ -103,115 +103,115 @@
     ]
   },
   "summary": {
-    "recall_at_3": 0.2219,
-    "precision_at_3": 0.8205,
-    "hit_rate_at_3": 1.0,
-    "mrr": 1.0,
+    "recall_at_3": 0.6795,
+    "precision_at_3": 0.3333,
+    "hit_rate_at_3": 0.8462,
+    "mrr": 0.7564,
     "faithfulness": 0.7231,
     "answer_relevance": 0.8923
   },
   "case_ids_map": {
     "rebooking-free": {
-      "recall_at_3": 0.2,
-      "precision_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.6666666666666666,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
       "answer_relevance": 1.0
     },
     "rebooking-what-needed": {
-      "recall_at_3": 0.3333333333333333,
-      "precision_at_3": 0.6666666666666666,
+      "recall_at_3": 0.5,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
       "answer_relevance": 1.0
     },
     "rebooking-disrupted-only": {
-      "recall_at_3": 0.09375,
-      "precision_at_3": 1.0,
+      "recall_at_3": 0.5,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
       "answer_relevance": 1.0
     },
     "rebooking-window": {
-      "recall_at_3": 0.2727272727272727,
-      "precision_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.6666666666666666,
       "hit_rate_at_3": 1.0,
-      "mrr": 1.0,
+      "mrr": 0.5,
       "faithfulness": 1.0,
       "answer_relevance": 1.0
     },
     "rebooking-auto": {
-      "recall_at_3": 0.16666666666666666,
-      "precision_at_3": 0.6666666666666666,
+      "recall_at_3": 0.5,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 0.4,
       "answer_relevance": 0.4
     },
     "rebooking-bags": {
-      "recall_at_3": 0.6,
-      "precision_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
       "answer_relevance": 1.0
     },
     "rebooking-inbound": {
-      "recall_at_3": 0.0967741935483871,
-      "precision_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
       "answer_relevance": 1.0
     },
     "rebooking-refund": {
-      "recall_at_3": 0.10714285714285714,
-      "precision_at_3": 1.0,
+      "recall_at_3": 0.3333333333333333,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
       "answer_relevance": 1.0
     },
     "rebooking-award": {
-      "recall_at_3": 0.3,
-      "precision_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
       "answer_relevance": 1.0
     },
     "rebooking-other-airlines": {
-      "recall_at_3": 0.3333333333333333,
-      "precision_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
       "answer_relevance": 1.0
     },
     "rebook-asks-ticket": {
-      "recall_at_3": 0.16666666666666666,
-      "precision_at_3": 0.3333333333333333,
-      "hit_rate_at_3": 1.0,
-      "mrr": 1.0,
+      "recall_at_3": 0.0,
+      "precision_at_3": 0.0,
+      "hit_rate_at_3": 0.0,
+      "mrr": 0.0,
       "faithfulness": 0.0,
       "answer_relevance": 0.8
     },
     "rebook-confirms": {
-      "recall_at_3": 0.14285714285714285,
-      "precision_at_3": 0.6666666666666666,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
-      "mrr": 1.0,
+      "mrr": 0.3333333333333333,
       "faithfulness": 0.0,
       "answer_relevance": 0.6
     },
     "rebook-full-flow": {
-      "recall_at_3": 0.07142857142857142,
-      "precision_at_3": 0.3333333333333333,
-      "hit_rate_at_3": 1.0,
-      "mrr": 1.0,
+      "recall_at_3": 0.0,
+      "precision_at_3": 0.0,
+      "hit_rate_at_3": 0.0,
+      "mrr": 0.0,
       "faithfulness": 0.0,
       "answer_relevance": 0.8
     },
@@ -221,7 +221,7 @@
       "hit_rate_at_3": 0.0,
       "mrr": 0.0,
       "faithfulness": 0.0,
-      "answer_relevance": 0.4
+      "answer_relevance": 0.8
     }
   },
   "skipped_ids": [
@@ -233,11 +233,11 @@
     {
       "id": "rebooking-free",
       "question": "Is the KQ Self Rebooking service free?",
-      "total_relevant": 15,
-      "retrieved_in_top_k": 3,
+      "ground_truth": "adjudicated",
+      "total_relevant": 2,
+      "retrieved_in_top_k": 2,
       "relevant_ranks": [
         1,
-        2,
         3
       ],
       "first_relevant_rank": 1,
@@ -246,8 +246,8 @@
         "self-rebooking-faqs-info-",
         "self-rebooking-service"
       ],
-      "recall_at_3": 0.2,
-      "precision_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.6666666666666666,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
@@ -257,11 +257,11 @@
     {
       "id": "rebooking-what-needed",
       "question": "What do I need to rebook myself?",
-      "total_relevant": 6,
-      "retrieved_in_top_k": 2,
+      "ground_truth": "adjudicated",
+      "total_relevant": 2,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        2
+        1
       ],
       "first_relevant_rank": 1,
       "context_titles": [
@@ -269,8 +269,8 @@
         "self-rebooking-service",
         "self-rebooking-faqs-info-"
       ],
-      "recall_at_3": 0.3333333333333333,
-      "precision_at_3": 0.6666666666666666,
+      "recall_at_3": 0.5,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
@@ -280,12 +280,11 @@
     {
       "id": "rebooking-disrupted-only",
       "question": "Can I rebook a flight that has not been disrupted?",
-      "total_relevant": 32,
-      "retrieved_in_top_k": 3,
+      "ground_truth": "adjudicated",
+      "total_relevant": 2,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        2,
-        3
+        1
       ],
       "first_relevant_rank": 1,
       "context_titles": [
@@ -293,8 +292,8 @@
         "self-rebooking-faqs-info-",
         "conditions-of-carriage-baggage"
       ],
-      "recall_at_3": 0.09375,
-      "precision_at_3": 1.0,
+      "recall_at_3": 0.5,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
@@ -304,23 +303,23 @@
     {
       "id": "rebooking-window",
       "question": "How far in advance can I rebook with the self-rebooking tool?",
-      "total_relevant": 11,
-      "retrieved_in_top_k": 3,
+      "ground_truth": "adjudicated",
+      "total_relevant": 2,
+      "retrieved_in_top_k": 2,
       "relevant_ranks": [
-        1,
         2,
         3
       ],
-      "first_relevant_rank": 1,
+      "first_relevant_rank": 2,
       "context_titles": [
         "self-rebooking-faqs-info-",
         "self-rebooking-service",
         "self-rebooking-faqs-info-"
       ],
-      "recall_at_3": 0.2727272727272727,
-      "precision_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.6666666666666666,
       "hit_rate_at_3": 1.0,
-      "mrr": 1.0,
+      "mrr": 0.5,
       "faithfulness": 1.0,
       "answer_relevance": 1.0,
       "judge_used": true
@@ -328,11 +327,11 @@
     {
       "id": "rebooking-auto",
       "question": "What happens if I do not rebook myself?",
-      "total_relevant": 12,
-      "retrieved_in_top_k": 2,
+      "ground_truth": "adjudicated",
+      "total_relevant": 2,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        2
+        1
       ],
       "first_relevant_rank": 1,
       "context_titles": [
@@ -340,8 +339,8 @@
         "self-rebooking-faqs-info-",
         "lost-and-found-items"
       ],
-      "recall_at_3": 0.16666666666666666,
-      "precision_at_3": 0.6666666666666666,
+      "recall_at_3": 0.5,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 0.4,
@@ -351,12 +350,11 @@
     {
       "id": "rebooking-bags",
       "question": "If I rebook, will my checked bags be transferred to the new flight?",
-      "total_relevant": 5,
-      "retrieved_in_top_k": 3,
+      "ground_truth": "adjudicated",
+      "total_relevant": 1,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        2,
-        3
+        1
       ],
       "first_relevant_rank": 1,
       "context_titles": [
@@ -364,8 +362,8 @@
         "self-rebooking-service",
         "self-rebooking-faqs-info-"
       ],
-      "recall_at_3": 0.6,
-      "precision_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
@@ -375,12 +373,11 @@
     {
       "id": "rebooking-inbound",
       "question": "If my outbound flight changed, can I also change the inbound free of charge?",
-      "total_relevant": 31,
-      "retrieved_in_top_k": 3,
+      "ground_truth": "adjudicated",
+      "total_relevant": 1,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        2,
-        3
+        1
       ],
       "first_relevant_rank": 1,
       "context_titles": [
@@ -388,8 +385,8 @@
         "self-rebooking-service",
         "self-rebooking-faqs-info-"
       ],
-      "recall_at_3": 0.0967741935483871,
-      "precision_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
@@ -399,12 +396,11 @@
     {
       "id": "rebooking-refund",
       "question": "I no longer want to travel. How can I request a refund?",
-      "total_relevant": 28,
-      "retrieved_in_top_k": 3,
+      "ground_truth": "adjudicated",
+      "total_relevant": 3,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        2,
-        3
+        1
       ],
       "first_relevant_rank": 1,
       "context_titles": [
@@ -412,8 +408,8 @@
         "conditions-of-carriage-baggage",
         "conditions-of-carriage-baggage"
       ],
-      "recall_at_3": 0.10714285714285714,
-      "precision_at_3": 1.0,
+      "recall_at_3": 0.3333333333333333,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
@@ -423,12 +419,11 @@
     {
       "id": "rebooking-award",
       "question": "Does the self-rebooking tool rebook award tickets?",
-      "total_relevant": 10,
-      "retrieved_in_top_k": 3,
+      "ground_truth": "adjudicated",
+      "total_relevant": 1,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        2,
-        3
+        1
       ],
       "first_relevant_rank": 1,
       "context_titles": [
@@ -436,8 +431,8 @@
         "self-rebooking-service",
         "self-rebooking-faqs-info-"
       ],
-      "recall_at_3": 0.3,
-      "precision_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
@@ -447,12 +442,11 @@
     {
       "id": "rebooking-other-airlines",
       "question": "Can the tool rebook another airline's ticket that includes a KQ sector?",
-      "total_relevant": 9,
-      "retrieved_in_top_k": 3,
+      "ground_truth": "adjudicated",
+      "total_relevant": 1,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        2,
-        3
+        1
       ],
       "first_relevant_rank": 1,
       "context_titles": [
@@ -460,8 +454,8 @@
         "self-rebooking-service",
         "self-rebooking-faqs-info-"
       ],
-      "recall_at_3": 0.3333333333333333,
-      "precision_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
       "mrr": 1.0,
       "faithfulness": 1.0,
@@ -471,21 +465,20 @@
     {
       "id": "rebook-asks-ticket",
       "question": "My flight KQ100 was cancelled. Please rebook me.",
-      "total_relevant": 6,
-      "retrieved_in_top_k": 1,
-      "relevant_ranks": [
-        1
-      ],
-      "first_relevant_rank": 1,
+      "ground_truth": "adjudicated",
+      "total_relevant": 2,
+      "retrieved_in_top_k": 0,
+      "relevant_ranks": [],
+      "first_relevant_rank": null,
       "context_titles": [
         "conditions-of-carriage-baggage",
         "online-refunds",
         "online-refunds"
       ],
-      "recall_at_3": 0.16666666666666666,
-      "precision_at_3": 0.3333333333333333,
-      "hit_rate_at_3": 1.0,
-      "mrr": 1.0,
+      "recall_at_3": 0.0,
+      "precision_at_3": 0.0,
+      "hit_rate_at_3": 0.0,
+      "mrr": 0.0,
       "faithfulness": 0.0,
       "answer_relevance": 0.8,
       "judge_used": true
@@ -493,22 +486,22 @@
     {
       "id": "rebook-confirms",
       "question": "My flight KQ100 was cancelled. My booking reference is 1234567890, please rebook me.",
-      "total_relevant": 14,
-      "retrieved_in_top_k": 2,
+      "ground_truth": "adjudicated",
+      "total_relevant": 1,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
         3
       ],
-      "first_relevant_rank": 1,
+      "first_relevant_rank": 3,
       "context_titles": [
         "conditions-of-carriage-baggage",
         "online-refunds",
         "self-rebooking-faqs-info-"
       ],
-      "recall_at_3": 0.14285714285714285,
-      "precision_at_3": 0.6666666666666666,
+      "recall_at_3": 1.0,
+      "precision_at_3": 0.3333333333333333,
       "hit_rate_at_3": 1.0,
-      "mrr": 1.0,
+      "mrr": 0.3333333333333333,
       "faithfulness": 0.0,
       "answer_relevance": 0.6,
       "judge_used": true
@@ -516,21 +509,20 @@
     {
       "id": "rebook-full-flow",
       "question": "My flight KQ100 was cancelled, please rebook me.",
-      "total_relevant": 14,
-      "retrieved_in_top_k": 1,
-      "relevant_ranks": [
-        1
-      ],
-      "first_relevant_rank": 1,
+      "ground_truth": "adjudicated",
+      "total_relevant": 1,
+      "retrieved_in_top_k": 0,
+      "relevant_ranks": [],
+      "first_relevant_rank": null,
       "context_titles": [
         "conditions-of-carriage-baggage",
         "online-refunds",
         "online-refunds"
       ],
-      "recall_at_3": 0.07142857142857142,
-      "precision_at_3": 0.3333333333333333,
-      "hit_rate_at_3": 1.0,
-      "mrr": 1.0,
+      "recall_at_3": 0.0,
+      "precision_at_3": 0.0,
+      "hit_rate_at_3": 0.0,
+      "mrr": 0.0,
       "faithfulness": 0.0,
       "answer_relevance": 0.8,
       "judge_used": true
@@ -538,6 +530,7 @@
     {
       "id": "flight-status",
       "question": "What is the current status of flight KQ100?",
+      "ground_truth": "term-proxy",
       "total_relevant": 0,
       "retrieved_in_top_k": 0,
       "relevant_ranks": [],
@@ -552,7 +545,7 @@
       "hit_rate_at_3": 0.0,
       "mrr": 0.0,
       "faithfulness": 0.0,
-      "answer_relevance": 0.4,
+      "answer_relevance": 0.8,
       "judge_used": true
     }
   ]

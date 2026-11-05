@@ -1,9 +1,10 @@
 {
-  "description": "Recall@k over the golden set: relevant reference chunks found among the first k retrieved results / total relevant reference chunks. Relevance is term-based ground truth (chunk contains a declared case term), denominated over the full corpus.",
+  "description": "Recall@k over the golden set: relevant reference chunks found among the first k retrieved results / total relevant reference chunks. Ground truth is adjudicated chunk IDs (relevant_chunk_ids) when labeled, falling back to distinctive-term matching over the full corpus.",
   "mode": "keyword-fallback",
   "corpus_chunks": 65,
   "cases_scored": 14,
   "cases_total": 17,
+  "adjudicated_cases": 13,
   "skipped_ids": [
     "escalate-human",
     "escalate-safety",
@@ -11,104 +12,40 @@
   ],
   "server_retriever_k": 3,
   "recall_by_k": {
-    "1": 0.0674,
-    "2": 0.1192,
-    "3": 0.1658,
-    "4": 0.2021,
-    "5": 0.2435,
-    "6": 0.2642,
-    "7": 0.3005,
-    "8": 0.3212,
-    "9": 0.342,
-    "10": 0.3523
+    "1": 0.4286,
+    "2": 0.4762,
+    "3": 0.619,
+    "4": 0.6667,
+    "5": 0.8095,
+    "6": 0.8095,
+    "7": 0.8095,
+    "8": 0.8571,
+    "9": 0.8571,
+    "10": 0.8571
   },
   "applicable_cases": 13,
   "not_applicable_ids": [
     "flight-status"
   ],
-  "case_hit_rate_at_server_k": 1.0,
-  "mrr_first_relevant": 1.0,
+  "case_hit_rate_at_server_k": 0.8462,
+  "mrr_first_relevant": 0.7872,
   "cases": [
     {
       "id": "rebooking-free",
       "question": "Is the KQ Self Rebooking service free?",
+      "ground_truth": "adjudicated",
       "terms": [
         "free"
       ],
-      "total_relevant": 15,
-      "retrieved_in_top_k": 7,
-      "relevant_ranks": [
-        1,
-        2,
-        3,
-        4,
-        5,
-        7,
-        9
-      ],
-      "hits": {
-        "1": 1,
-        "2": 2,
-        "3": 3,
-        "4": 4,
-        "5": 5,
-        "6": 5,
-        "7": 6,
-        "8": 6,
-        "9": 7,
-        "10": 7
-      },
-      "first_relevant_rank": 1,
-      "top_scores": [
-        {
-          "rank": 1,
-          "title": "self-rebooking-faqs-info-",
-          "score": 1.0,
-          "relevant": true
-        },
-        {
-          "rank": 2,
-          "title": "self-rebooking-faqs-info-",
-          "score": 1.0,
-          "relevant": true
-        },
-        {
-          "rank": 3,
-          "title": "self-rebooking-service",
-          "score": 1.0,
-          "relevant": true
-        },
-        {
-          "rank": 4,
-          "title": "special-baggage",
-          "score": 0.6,
-          "relevant": true
-        },
-        {
-          "rank": 5,
-          "title": "conditions-of-carriage-baggage",
-          "score": 0.6,
-          "relevant": true
-        }
-      ]
-    },
-    {
-      "id": "rebooking-what-needed",
-      "question": "What do I need to rebook myself?",
-      "terms": [
-        "booking reference",
-        "e-ticket",
-        "ticket number"
-      ],
-      "total_relevant": 6,
+      "total_relevant": 2,
       "retrieved_in_top_k": 2,
       "relevant_ranks": [
         1,
-        2
+        3
       ],
       "hits": {
         "1": 1,
-        "2": 2,
+        "2": 1,
         "3": 2,
         "4": 2,
         "5": 2,
@@ -128,9 +65,69 @@
         },
         {
           "rank": 2,
+          "title": "self-rebooking-faqs-info-",
+          "score": 1.0,
+          "relevant": false
+        },
+        {
+          "rank": 3,
+          "title": "self-rebooking-service",
+          "score": 1.0,
+          "relevant": true
+        },
+        {
+          "rank": 4,
+          "title": "special-baggage",
+          "score": 0.6,
+          "relevant": false
+        },
+        {
+          "rank": 5,
+          "title": "conditions-of-carriage-baggage",
+          "score": 0.6,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "rebooking-what-needed",
+      "question": "What do I need to rebook myself?",
+      "ground_truth": "adjudicated",
+      "terms": [
+        "booking reference",
+        "e-ticket",
+        "ticket number"
+      ],
+      "total_relevant": 2,
+      "retrieved_in_top_k": 1,
+      "relevant_ranks": [
+        1
+      ],
+      "hits": {
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 1
+      },
+      "first_relevant_rank": 1,
+      "top_scores": [
+        {
+          "rank": 1,
+          "title": "self-rebooking-faqs-info-",
+          "score": 1.0,
+          "relevant": true
+        },
+        {
+          "rank": 2,
           "title": "self-rebooking-service",
           "score": 0.75,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 3,
@@ -155,37 +152,30 @@
     {
       "id": "rebooking-disrupted-only",
       "question": "Can I rebook a flight that has not been disrupted?",
+      "ground_truth": "adjudicated",
       "terms": [
         "cancelled",
         "delayed",
         "disrupted",
-        "only",
         "schedule change"
       ],
-      "total_relevant": 32,
-      "retrieved_in_top_k": 9,
+      "total_relevant": 2,
+      "retrieved_in_top_k": 2,
       "relevant_ranks": [
         1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        10
+        4
       ],
       "hits": {
         "1": 1,
-        "2": 2,
-        "3": 3,
-        "4": 4,
-        "5": 5,
-        "6": 6,
-        "7": 7,
-        "8": 8,
-        "9": 8,
-        "10": 9
+        "2": 1,
+        "3": 1,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 2,
+        "8": 2,
+        "9": 2,
+        "10": 2
       },
       "first_relevant_rank": 1,
       "top_scores": [
@@ -199,13 +189,13 @@
           "rank": 2,
           "title": "self-rebooking-faqs-info-",
           "score": 1.0,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 3,
           "title": "conditions-of-carriage-baggage",
           "score": 0.875,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 4,
@@ -217,46 +207,45 @@
           "rank": 5,
           "title": "conditions-of-carriage-baggage",
           "score": 0.75,
-          "relevant": true
+          "relevant": false
         }
       ]
     },
     {
       "id": "rebooking-window",
       "question": "How far in advance can I rebook with the self-rebooking tool?",
+      "ground_truth": "adjudicated",
       "terms": [
         "24 hours",
         "7 days",
         "72 hours",
         "seven days"
       ],
-      "total_relevant": 11,
-      "retrieved_in_top_k": 4,
+      "total_relevant": 2,
+      "retrieved_in_top_k": 2,
       "relevant_ranks": [
-        1,
         2,
-        3,
-        5
+        3
       ],
       "hits": {
-        "1": 1,
-        "2": 2,
-        "3": 3,
-        "4": 3,
-        "5": 4,
-        "6": 4,
-        "7": 4,
-        "8": 4,
-        "9": 4,
-        "10": 4
+        "1": 0,
+        "2": 1,
+        "3": 2,
+        "4": 2,
+        "5": 2,
+        "6": 2,
+        "7": 2,
+        "8": 2,
+        "9": 2,
+        "10": 2
       },
-      "first_relevant_rank": 1,
+      "first_relevant_rank": 2,
       "top_scores": [
         {
           "rank": 1,
           "title": "self-rebooking-faqs-info-",
           "score": 0.8,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 2,
@@ -280,37 +269,35 @@
           "rank": 5,
           "title": "faqs",
           "score": 0.6,
-          "relevant": true
+          "relevant": false
         }
       ]
     },
     {
       "id": "rebooking-auto",
       "question": "What happens if I do not rebook myself?",
+      "ground_truth": "adjudicated",
       "terms": [
         "automatic",
-        "email",
         "next available flight"
       ],
-      "total_relevant": 12,
-      "retrieved_in_top_k": 4,
+      "total_relevant": 2,
+      "retrieved_in_top_k": 2,
       "relevant_ranks": [
         1,
-        2,
-        7,
         8
       ],
       "hits": {
         "1": 1,
-        "2": 2,
-        "3": 2,
-        "4": 2,
-        "5": 2,
-        "6": 2,
-        "7": 3,
-        "8": 4,
-        "9": 4,
-        "10": 4
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 2,
+        "9": 2,
+        "10": 2
       },
       "first_relevant_rank": 1,
       "top_scores": [
@@ -324,7 +311,7 @@
           "rank": 2,
           "title": "self-rebooking-faqs-info-",
           "score": 0.8,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 3,
@@ -349,28 +336,27 @@
     {
       "id": "rebooking-bags",
       "question": "If I rebook, will my checked bags be transferred to the new flight?",
+      "ground_truth": "adjudicated",
       "terms": [
         "automatically",
         "transferred"
       ],
-      "total_relevant": 5,
-      "retrieved_in_top_k": 3,
+      "total_relevant": 1,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        2,
-        3
+        1
       ],
       "hits": {
         "1": 1,
-        "2": 2,
-        "3": 3,
-        "4": 3,
-        "5": 3,
-        "6": 3,
-        "7": 3,
-        "8": 3,
-        "9": 3,
-        "10": 3
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 1
       },
       "first_relevant_rank": 1,
       "top_scores": [
@@ -384,13 +370,13 @@
           "rank": 2,
           "title": "self-rebooking-service",
           "score": 0.75,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 3,
           "title": "self-rebooking-faqs-info-",
           "score": 0.625,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 4,
@@ -409,34 +395,28 @@
     {
       "id": "rebooking-inbound",
       "question": "If my outbound flight changed, can I also change the inbound free of charge?",
+      "ground_truth": "adjudicated",
       "terms": [
         "contact center",
-        "no",
         "travel agency",
         "travel agent"
       ],
-      "total_relevant": 31,
-      "retrieved_in_top_k": 7,
+      "total_relevant": 1,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        2,
-        3,
-        4,
-        5,
-        9,
-        10
+        1
       ],
       "hits": {
         "1": 1,
-        "2": 2,
-        "3": 3,
-        "4": 4,
-        "5": 5,
-        "6": 5,
-        "7": 5,
-        "8": 5,
-        "9": 6,
-        "10": 7
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 1
       },
       "first_relevant_rank": 1,
       "top_scores": [
@@ -450,60 +430,53 @@
           "rank": 2,
           "title": "self-rebooking-service",
           "score": 0.7,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 3,
           "title": "self-rebooking-faqs-info-",
           "score": 0.6,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 4,
           "title": "self-rebooking-service",
           "score": 0.6,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 5,
           "title": "faqs",
           "score": 0.6,
-          "relevant": true
+          "relevant": false
         }
       ]
     },
     {
       "id": "rebooking-refund",
       "question": "I no longer want to travel. How can I request a refund?",
+      "ground_truth": "adjudicated",
       "terms": [
         "24 hours",
-        "form",
-        "online",
         "refund"
       ],
-      "total_relevant": 28,
-      "retrieved_in_top_k": 8,
+      "total_relevant": 3,
+      "retrieved_in_top_k": 2,
       "relevant_ranks": [
         1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        9
+        5
       ],
       "hits": {
         "1": 1,
-        "2": 2,
-        "3": 3,
-        "4": 4,
-        "5": 5,
-        "6": 6,
-        "7": 7,
-        "8": 7,
-        "9": 8,
-        "10": 8
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 2,
+        "6": 2,
+        "7": 2,
+        "8": 2,
+        "9": 2,
+        "10": 2
       },
       "first_relevant_rank": 1,
       "top_scores": [
@@ -517,19 +490,19 @@
           "rank": 2,
           "title": "conditions-of-carriage-baggage",
           "score": 0.7143,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 3,
           "title": "conditions-of-carriage-baggage",
           "score": 0.7143,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 4,
           "title": "online-refunds",
           "score": 0.7143,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 5,
@@ -542,31 +515,26 @@
     {
       "id": "rebooking-award",
       "question": "Does the self-rebooking tool rebook award tickets?",
+      "ground_truth": "adjudicated",
       "terms": [
-        "award",
-        "yes"
+        "award"
       ],
-      "total_relevant": 10,
-      "retrieved_in_top_k": 6,
+      "total_relevant": 1,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        2,
-        3,
-        4,
-        7,
-        8
+        1
       ],
       "hits": {
         "1": 1,
-        "2": 2,
-        "3": 3,
-        "4": 4,
-        "5": 4,
-        "6": 4,
-        "7": 5,
-        "8": 6,
-        "9": 6,
-        "10": 6
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 1
       },
       "first_relevant_rank": 1,
       "top_scores": [
@@ -580,19 +548,19 @@
           "rank": 2,
           "title": "self-rebooking-service",
           "score": 0.75,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 3,
           "title": "self-rebooking-faqs-info-",
           "score": 0.625,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 4,
           "title": "self-rebooking-service",
           "score": 0.5,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 5,
@@ -605,31 +573,27 @@
     {
       "id": "rebooking-other-airlines",
       "question": "Can the tool rebook another airline's ticket that includes a KQ sector?",
+      "ground_truth": "adjudicated",
       "terms": [
         "reissued",
-        "revalidation",
-        "yes"
+        "revalidation"
       ],
-      "total_relevant": 9,
-      "retrieved_in_top_k": 5,
+      "total_relevant": 1,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        2,
-        3,
-        7,
-        9
+        1
       ],
       "hits": {
         "1": 1,
-        "2": 2,
-        "3": 3,
-        "4": 3,
-        "5": 3,
-        "6": 3,
-        "7": 4,
-        "8": 4,
-        "9": 5,
-        "10": 5
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 1
       },
       "first_relevant_rank": 1,
       "top_scores": [
@@ -643,13 +607,13 @@
           "rank": 2,
           "title": "self-rebooking-service",
           "score": 0.7,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 3,
           "title": "self-rebooking-faqs-info-",
           "score": 0.5,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 4,
@@ -668,37 +632,36 @@
     {
       "id": "rebook-asks-ticket",
       "question": "My flight KQ100 was cancelled. Please rebook me.",
+      "ground_truth": "adjudicated",
       "terms": [
         "booking reference",
         "e-ticket",
         "ticket number"
       ],
-      "total_relevant": 6,
-      "retrieved_in_top_k": 3,
+      "total_relevant": 2,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        4,
         5
       ],
       "hits": {
-        "1": 1,
-        "2": 1,
-        "3": 1,
-        "4": 2,
-        "5": 3,
-        "6": 3,
-        "7": 3,
-        "8": 3,
-        "9": 3,
-        "10": 3
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 1
       },
-      "first_relevant_rank": 1,
+      "first_relevant_rank": 5,
       "top_scores": [
         {
           "rank": 1,
           "title": "conditions-of-carriage-baggage",
           "score": 0.6667,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 2,
@@ -716,7 +679,7 @@
           "rank": 4,
           "title": "faqs",
           "score": 0.5,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 5,
@@ -729,40 +692,34 @@
     {
       "id": "rebook-confirms",
       "question": "My flight KQ100 was cancelled. My booking reference is 1234567890, please rebook me.",
+      "ground_truth": "adjudicated",
       "terms": [
-        "email",
-        "hrm-",
-        "reference"
+        "hrm-"
       ],
-      "total_relevant": 14,
-      "retrieved_in_top_k": 6,
+      "total_relevant": 1,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        3,
-        5,
-        6,
-        7,
-        8
+        3
       ],
       "hits": {
-        "1": 1,
-        "2": 1,
-        "3": 2,
-        "4": 2,
-        "5": 3,
-        "6": 4,
-        "7": 5,
-        "8": 6,
-        "9": 6,
-        "10": 6
+        "1": 0,
+        "2": 0,
+        "3": 1,
+        "4": 1,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 1
       },
-      "first_relevant_rank": 1,
+      "first_relevant_rank": 3,
       "top_scores": [
         {
           "rank": 1,
           "title": "conditions-of-carriage-baggage",
           "score": 0.6667,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 2,
@@ -786,45 +743,41 @@
           "rank": 5,
           "title": "self-rebooking-service",
           "score": 0.4444,
-          "relevant": true
+          "relevant": false
         }
       ]
     },
     {
       "id": "rebook-full-flow",
       "question": "My flight KQ100 was cancelled, please rebook me.",
+      "ground_truth": "adjudicated",
       "terms": [
-        "email",
-        "hrm-",
-        "reference"
+        "hrm-"
       ],
-      "total_relevant": 14,
-      "retrieved_in_top_k": 4,
+      "total_relevant": 1,
+      "retrieved_in_top_k": 1,
       "relevant_ranks": [
-        1,
-        4,
-        5,
-        6
+        5
       ],
       "hits": {
-        "1": 1,
-        "2": 1,
-        "3": 1,
-        "4": 2,
-        "5": 3,
-        "6": 4,
-        "7": 4,
-        "8": 4,
-        "9": 4,
-        "10": 4
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 1,
+        "6": 1,
+        "7": 1,
+        "8": 1,
+        "9": 1,
+        "10": 1
       },
-      "first_relevant_rank": 1,
+      "first_relevant_rank": 5,
       "top_scores": [
         {
           "rank": 1,
           "title": "conditions-of-carriage-baggage",
           "score": 0.6667,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 2,
@@ -842,7 +795,7 @@
           "rank": 4,
           "title": "faqs",
           "score": 0.5,
-          "relevant": true
+          "relevant": false
         },
         {
           "rank": 5,
@@ -855,6 +808,7 @@
     {
       "id": "flight-status",
       "question": "What is the current status of flight KQ100?",
+      "ground_truth": "term-proxy",
       "terms": [
         "kq100"
       ],

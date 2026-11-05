@@ -32,6 +32,7 @@ import json
 import re
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import settings
@@ -46,20 +47,61 @@ DEFAULT_REPORT_PATH = Path(__file__).with_name("recall_report.json")
 _SKIPPED_IDS = frozenset({"escalate-human", "escalate-safety", "out-of-scope"})
 SKIPPED_IDS = _SKIPPED_IDS  # public alias for sibling modules
 _MAX_K = 10
+# Words that cannot distinguish "the chunk that answers the question": they
+# appear in passage after passage and inflated the term-proxy denominator.
+_GENERIC_TERMS = frozenset({"yes", "no", "only", "online", "form", "email", "reference"})
 
 _DESCRIPTION = (
     "Recall@k over the golden set: relevant reference chunks found among the "
-    "first k retrieved results / total relevant reference chunks. Relevance "
-    "is term-based ground truth (chunk contains a declared case term), "
-    "denominated over the full corpus."
+    "first k retrieved results / total relevant reference chunks. Ground "
+    "truth is adjudicated chunk IDs (relevant_chunk_ids) when labeled, "
+    "falling back to distinctive-term matching over the full corpus."
 )
 
 
 def case_terms(case: dict) -> list[str]:
-    """Normalized ground-truth terms for one case, deduped and sorted."""
+    """Normalized ground-truth terms for one case, deduped and sorted.
+
+    Generic tokens ("yes", "no", "only", "other", "online", "form") are
+    excluded: as term-proxy relevance they matched more than half of the
+    corpus ("no" alone marked 31 of 65 chunks relevant) and drowned the
+    denominator. Distinctive terms remain.
+    """
     terms: list[str] = [normalize_term(t) for t in (case.get("expect_contains") or [])]
     terms += [normalize_term(t) for t in (case.get("expect_any") or [])]
-    return sorted({t for t in terms if t})
+    return sorted({t for t in terms if t} - _GENERIC_TERMS)
+
+
+def chunk_key(fragment_or_chunk) -> str:
+    """Stable identity for a corpus chunk, shared by labels and recall math."""
+    source = (
+        getattr(fragment_or_chunk, "source_url", None)
+        or getattr(fragment_or_chunk, "title", None)
+        or "unknown"
+    )
+    return f"{source}#{fragment_or_chunk.chunk_index}"
+
+
+@dataclass
+class GroundTruth:
+    """Adjudicated chunk IDs when available, term proxy otherwise."""
+
+    ids: frozenset[str] | None
+    terms: list[str]
+
+    def is_relevant(self, chunk_key: str, content: str) -> bool:
+        if self.ids is not None:
+            return chunk_key in self.ids
+        return any(term_in_content(term, normalize_term(content)) for term in self.terms)
+
+
+def case_ground_truth(case: dict) -> GroundTruth:
+    """Adjudicated ``relevant_chunk_ids`` when labeled; term proxy otherwise."""
+    ids = case.get("relevant_chunk_ids")
+    return GroundTruth(
+        ids=frozenset(ids) if ids else None,
+        terms=case_terms(case),
+    )
 
 
 def term_in_content(term: str, content: str) -> bool:
@@ -97,18 +139,21 @@ async def measure(max_k: int = _MAX_K) -> dict:
         query_embeddings = vectors
 
     per_case: list[dict] = []
+    adjudicated = 0
     for index, case in enumerate(eval_cases):
-        terms = case_terms(case)
+        truth = case_ground_truth(case)
+        adjudicated += 1 if truth.ids is not None else 0
         embedding = query_embeddings[index] if query_embeddings else None
         ranked = rank_fragments(fragments, embedding, case["question"], k=max_k)
 
         relevant_ranks = [
             i
             for i, chunk in enumerate(ranked, 1)
-            if is_relevant(terms, chunk.content)
+            if truth.is_relevant(chunk_key(chunk), chunk.content)
         ]
         corpus_count = sum(
-            1 for fragment in fragments if is_relevant(terms, fragment.content)
+            1 for fragment in fragments
+            if truth.is_relevant(chunk_key(fragment), fragment.content)
         )
 
         hits_by_k = {
@@ -119,7 +164,8 @@ async def measure(max_k: int = _MAX_K) -> dict:
             {
                 "id": case["id"],
                 "question": case["question"],
-                "terms": terms,
+                "ground_truth": "adjudicated" if truth.ids is not None else "term-proxy",
+                "terms": truth.terms,
                 "total_relevant": corpus_count,
                 "retrieved_in_top_k": len(relevant_ranks),
                 "relevant_ranks": relevant_ranks,
@@ -175,6 +221,7 @@ async def measure(max_k: int = _MAX_K) -> dict:
         "corpus_chunks": len(fragments),
         "cases_scored": len(per_case),
         "cases_total": len(cases),
+        "adjudicated_cases": adjudicated,
         "skipped_ids": sorted(_SKIPPED_IDS),
         "server_retriever_k": server_k,
         "recall_by_k": recall_by_k,
