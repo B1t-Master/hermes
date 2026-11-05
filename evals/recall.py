@@ -43,7 +43,8 @@ from ingest.store import get_store, rank_fragments
 DEFAULT_REPORT_PATH = Path(__file__).with_name("recall_report.json")
 # No KB ground truth: escalation prompts never enter the retrieval path, and
 # the out-of-scope question is answered by routing, not by chunks.
-_SKIPPED_IDS = {"escalate-human", "escalate-safety", "out-of-scope"}
+_SKIPPED_IDS = frozenset({"escalate-human", "escalate-safety", "out-of-scope"})
+SKIPPED_IDS = _SKIPPED_IDS  # public alias for sibling modules
 _MAX_K = 10
 
 _DESCRIPTION = (
