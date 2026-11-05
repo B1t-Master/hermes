@@ -73,6 +73,9 @@ export const api = {
     request<Token>("/auth/anonymous", { method: "POST", body: data }),
   agentLogin: (data: { username: string; password: string }) =>
     request<Token>("/auth/agent/login", { method: "POST", body: data }),
+  /* exchange a still-valid token for a fresh one */
+  refresh: (token: string) =>
+    request<Token>("/auth/refresh", { method: "POST", token }),
   agentMe: (token: string) => request<AgentInfo>("/auth/agent/me", { token }),
 
   /* conversations + messages (passenger) */
