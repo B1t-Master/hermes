@@ -61,6 +61,11 @@ services:
 
   frontend:
     build: ./frontend
+    # Dockerfile ENV supplies the defaults; overridden at runtime
+    # (Railway: BACKEND_HOST=backend.railway.internal).
+    environment:
+      BACKEND_HOST: backend
+      BACKEND_PORT: "8000"
     ports:
       - "127.0.0.1:5173:80"
     depends_on:
