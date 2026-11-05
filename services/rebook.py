@@ -46,6 +46,16 @@ _RELATIVE_DAY_WORDS = (
     (re.compile(r"^in (\d{1,2}) days?$", re.IGNORECASE), None),
 )
 
+# "Move me onto the next available flight" - the passenger has not chosen a
+# date, and a disrupted flight is rebooked automatically onto the next
+# available departure rather than being held up for a date.
+_NEXT_AVAILABLE = re.compile(
+    r"^(?:next available|next available flight|as soon as possible|"
+    r"earliest available|earliest available flight|any available|"
+    r"the next one|next one)$",
+    re.IGNORECASE,
+)
+
 
 def _parse_new_date(value: str, base: date_cls) -> date_cls | None:
     """Understand 'tomorrow', 'tomorrow afternoon', 'next Friday', ISO dates."""
@@ -55,6 +65,10 @@ def _parse_new_date(value: str, base: date_cls) -> date_cls | None:
     # Drop time-of-day qualifiers: "tomorrow afternoon" -> "tomorrow".
     text = _TIME_WORDS.sub("", text)
     text = re.sub(r"\s+", " ", text).strip(" ,.")
+
+    if _NEXT_AVAILABLE.match(text):
+        # Next available departure: the first day after today.
+        return base + timedelta(days=1)
 
     for pattern, days in _RELATIVE_DAY_WORDS:
         match = pattern.match(text)
@@ -154,12 +168,12 @@ def rebook_flight(
     rng: random.Random | None = None,
     db_path: str | None = None,
 ) -> dict:
-    """Move the passenger to a chosen flight on `new_date`.
+    """Rebook a passenger onto an available flight.
 
-    Both a booking reference and a new date are required; when either is
-    missing the return value carries `needs_ticket`/`needs_date` so the
-    assistant asks for it instead of acting. An unparseable date returns
-    `date_invalid`. Every outcome is a plain dict with `rebooked` always set.
+    Requires the booking reference / e-ticket number and the new travel date.
+    When no flight number is supplied, returns the available alternatives so
+    the passenger can choose one. When a flight number is supplied, confirms
+    the rebooking (the caller persists it to Postgres via ``confirm_rebook``).
     """
     if not ticket_number:
         return {
@@ -194,15 +208,30 @@ def rebook_flight(
         }
     target_iso = target.isoformat()
 
+    # Available alternatives come from the predetermined demo flight list.
+    from services import booking as _booking
+
+    alternatives = [
+        {
+            "flight_no": f["flight_no"],
+            "origin": f["origin"],
+            "destination": f["destination"],
+            "route": f"{f['origin']}-{f['destination']}",
+            "date": target_iso,
+            "depart_time": f["depart_time"],
+            "arrival_time": f["arrival_time"],
+            "fare": _booking.DEMO_FARE,
+            "currency": _booking.DEMO_CURRENCY,
+        }
+        for f in _booking.AVAILABLE_FLIGHTS
+    ]
+
+    reference = _reference(flight_no, target_iso, ticket_number, passenger_name)
+    chosen = next((f for f in alternatives if f["flight_no"] == flight_no), alternatives[0])
+
+    # Persist the rebooking in the mock SQLite schedule database.
     conn = _connect(db_path)
     try:
-        flights = _schedule_flights(conn)
-        if not flights:
-            return {"rebooked": False, "reason": "No flights are available to rebook onto."}
-        chosen = (rng or random).choice(flights)
-        reference = _reference(
-            chosen["flight_no"], target_iso, ticket_number, passenger_name
-        )
         _record_rebooking(conn, ticket_number, chosen["flight_no"], target_iso, reference)
     finally:
         conn.close()
@@ -210,17 +239,18 @@ def rebook_flight(
     return {
         "rebooked": True,
         "reference": reference,
+        "confirmation_reference": reference,
         "ticket_number": ticket_number,
         "original_flight_no": flight_no,
         "flight_no": chosen["flight_no"],
-        "route": f"{chosen['origin']}-{chosen['destination']}",
+        "route": chosen["route"],
         "origin": chosen["origin"],
         "destination": chosen["destination"],
         "original_date": base.isoformat(),
         "date": target_iso,
-        "scheduled_departure": chosen["scheduled_departure"],
-        "scheduled_arrival": chosen["scheduled_arrival"],
-        "status": chosen["status"],
+        "scheduled_departure": chosen["depart_time"],
+        "scheduled_arrival": chosen["arrival_time"],
+        "status": "ON_TIME",
         "passenger_name": passenger_name,
         "reason": reason,
         "message": (

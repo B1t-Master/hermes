@@ -1,3 +1,6 @@
+import uuid
+from datetime import date, timedelta
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -116,6 +119,54 @@ async def init_models() -> None:
         ).scalar()
         if not has_actions:
             await conn.execute(text("ALTER TABLE messages ADD COLUMN actions JSON"))
+        # messages.payment_id: the in-chat payment card belongs to a bot
+        # message. Added after the table first existed, so guard it explicitly.
+        has_payment_id = (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM information_schema.columns "
+                    "WHERE table_name = 'messages' AND column_name = 'payment_id'"
+                )
+            )
+        ).scalar()
+        if not has_payment_id:
+            await conn.execute(
+                text(
+                    "ALTER TABLE messages ADD COLUMN payment_id UUID "
+                    "REFERENCES payments(id) ON DELETE SET NULL"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_messages_payment_id "
+                    "ON messages (payment_id)"
+                )
+            )
+        # conversations.facts: structured memory slots (JSON object).
+        has_facts = (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM information_schema.columns "
+                    "WHERE table_name = 'conversations' AND column_name = 'facts'"
+                )
+            )
+        ).scalar()
+        if not has_facts:
+            await conn.execute(text("ALTER TABLE conversations ADD COLUMN facts JSON"))
+        # bookings.passenger_email was made nullable so a booking can be held
+        # before the passenger supplies their email (payment happens first).
+        has_email_nullable = (
+            await conn.execute(
+                text(
+                    "SELECT is_nullable FROM information_schema.columns "
+                    "WHERE table_name = 'bookings' AND column_name = 'passenger_email'"
+                )
+            )
+        ).scalar()
+        if has_email_nullable == "NO":
+            await conn.execute(
+                text("ALTER TABLE bookings ALTER COLUMN passenger_email DROP NOT NULL")
+            )
         # Ticket -> confirmation email. Seeded with prototype rows; ON CONFLICT
         # keeps this idempotent and never clobbers rows added later.
         seed_email = settings.rebook_confirmation_email
@@ -128,3 +179,28 @@ async def init_models() -> None:
                 ),
                 {"ticket": ticket, "email": seed_email},
             )
+        # Prototype booking(s) so identity inheritance is demonstrable: a
+        # passenger logging in with the seed email sees their upcoming trip.
+        depart = date.today() + timedelta(days=14)
+        await conn.execute(
+            text(
+                "INSERT INTO bookings "
+                "(id, pnr, passenger_email, passenger_name, flight_no, origin, "
+                " destination, depart_date, depart_time, status, currency, amount) "
+                "VALUES (:id, :pnr, :email, :name, :flight, :origin, :dest, "
+                " :date, :time, 'ticketed', 'KES', :amount) "
+                "ON CONFLICT (pnr) DO NOTHING"
+            ),
+            {
+                "id": uuid.uuid4(),
+                "pnr": "KQ7X2B9",
+                "email": seed_email,
+                "name": "Isaac Mwangi",
+                "flight": "KQ100",
+                "origin": "NBO",
+                "dest": "LHR",
+                "date": depart.isoformat(),
+                "time": "23:59",
+                "amount": 78500.0,
+            },
+        )

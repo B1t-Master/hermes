@@ -1,240 +1,169 @@
-# hermes: Agentic RAG Support Bot (Kenya Airways prototype)
+# Hermes — Kenya Airways support bot (prototype)
 
-A RAG-based passenger support assistant with sentiment routing, human
-escalation, and function calling for flight operations. Ships as a FastAPI
-backend, a React frontend (passenger chat widget + agent dashboard), and a
-Telegram channel. All local inference runs on CPU: self-hosted embeddings and
-sentiment, with a streaming LLM via Groq or DeepSeek.
+Hermes is a RAG-based passenger support assistant for Kenya Airways. It answers
+policy, baggage, check-in, flight-status and rebooking questions, streams replies
+over WebSocket, routes upset or high-risk conversations to a human agent
+dashboard, and supports an in-chat booking → M-Pesa payment → e-ticket flow.
 
-## Stack
-
-- **Backend:** FastAPI, LangGraph, SQLAlchemy (async) + PostgreSQL/pgvector (local)
-- **Inference:** `sentence-transformers` (`bge-small-en-v1.5`, CPU) · sentiment
-  `twitter-roberta-base-sentiment-latest` (CPU)
-- **LLM:** Groq `openai/gpt-oss-120b` (primary) / `openai/gpt-oss-20b` (fallback)
-  via OpenAI-compatible API; DeepSeek configured as backup
-- **Auth:** JWT (`PyJWT` + `bcrypt`): passengers (email+password or anonymous) and agents
-- **Frontend:** React (Vite): passenger chat widget + human-agent dashboard
-- **Channels:** web chat widget (WebSocket streaming) + Telegram (long polling)
-- **Email:** Resend for rebooking confirmations, with a local outbox fallback
-- **Flight data:** SQLite schedule (`.flights.sqlite`) served through a mock MCP server
-
-## Quick start
-
-1. **Prerequisites**: Local PostgreSQL 16+ with `pgvector` extension
-   ```bash
-   # Ubuntu 24.04+
-   sudo apt-get update && sudo apt-get install -y postgresql postgresql-16-pgvector
-   sudo -u postgres psql -c "CREATE DATABASE hermes;"
-   sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
-   ```
-
-2. **Configure**:
-   ```bash
-   cp .env.example .env
-   # Edit .env: fill in GROQ_API_KEY (or DEEPSEEK_API_KEY)
-   # DATABASE_URL defaults to: postgresql+asyncpg://postgres:postgres@localhost:5432/hermes
-   # Optional: TELEGRAM_BOT_TOKEN, RESEND_API_KEY
-   ```
-
-3. **Backend**:
-   ```bash
-   python -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
-   uvicorn app.main:app --reload
-   ```
-
-4. **Ingest data** (PDFs in `data_sources/` + KQ FAQ URLs):
-   ```bash
-   python -m ingest.run --embed   # CPU embeddings (torch + sentence-transformers required)
-   ```
-
-5. **Frontend**:
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
-   Open http://localhost:5173
-
-The flight schedule lands in `.flights.sqlite` on first use; no extra setup.
+This is a prototype: the flight data is simulated and the operational systems are
+mocked. See [Assumptions](#assumptions).
 
 ## Architecture
 
-<img src="docs/architecture.png" alt="hermes architecture" width="720" />
+```mermaid
+flowchart LR
+    subgraph Channels
+        W[Web chat widget]
+        T[Telegram]
+        D[Agent dashboard]
+    end
 
-Passenger query -> **sentiment + intent** analysis -> **Router agent** ->
+    W -->|REST + WS| A[FastAPI + LangGraph agent]
+    T -->|long polling| A
+    D -->|REST + WS| A
 
-- routine -> retrieve relevant chunks from pgvector -> **Q&A agent** generates a
-  grounded, streaming answer; or
-- escalate -> conversation summary routed to the **human-agent dashboard**; or
-- rebook -> **rebook_flight** function calling (see below); or
-- flight status -> enriched with live (mock) data from the flight service
-  before answering; or
-- lost/delayed baggage -> in-process guidance (baggage claim, Lost & Found
-  desk, WorldTracer tracking) followed by a human-agent offer.
+    A --> K[(Knowledge base<br/>PostgreSQL + pgvector)]
+    A --> E[Embedding model<br/>bge-small-en-v1.5<br/>CPU]
+    A --> S[Sentiment model<br/>twitter-roberta<br/>CPU]
+    A --> L[LLM API<br/>Groq / DeepSeek]
+    A --> M[Mock flight MCP server<br/>get_flight_status<br/>list_delays]
+    A --> O[Mock ops MCP server<br/>search / book / rebook]
+    A --> P[Email + M-Pesa<br/>notifications]
+```
 
-Escalation triggers: sentiment below -0.75 on 2 consecutive turns, high-risk
-intent (compensation/safety/emergency), or more than 3 unresolved turns.
-Safety and an explicit "talk to a human" escalate immediately. The softer
-triggers (negative-sentiment streak, unresolved loop, and compensation when
-`ESCALATE_ON_COMPENSATION=false`) first offer the passenger a choice — keep
-trying or connect to a person — and only hand off after
-`SOFT_ESCALATION_MAX_OFFERS` unanswered offers.
+Full component details, request flow, and screenshots:
+[docs/system-architecture.md](docs/system-architecture.md).
 
-**Multi-passenger isolation:** every conversation, message, and escalation is
-scoped to a `passenger_id`; the Q&A agent builds context only from that
-passenger's history, so no context leaks between sessions.
+## Knowledge base
 
-## Rebooking via function calling
+The seeded corpus is:
 
-Rebooking is offered two ways. The bot surfaces the official KQ self-service
-page (`SELF_SERVICE_REBOOKING_URL`) **and** offers to do it in chat, then
-rebooks through a two-step conversation and never asks for a flight number (it
-picks one):
+- **KQ self-rebooking FAQ PDF** — `data_sources/self-rebooking-faqs-info-.pdf`.
+- **28 Kenya Airways web pages** covering baggage, check-in, managing a booking,
+  refunds, special care, travel requirements and contact information — listed in
+  [`data_sources/data_source1.txt`](data_sources/data_source1.txt).
+- Optional documents uploaded from the agent dashboard (PDF/DOCX) or ingested by
+  URL. Re-ingest is content-hash based, so unchanged sources are skipped.
 
-1. Passenger asks to rebook. The bot asks for the booking reference, PNR, or
-   13-digit e-ticket number, once.
-2. Once it has the reference, it asks for the new travel date. Natural
-   language is understood: `tomorrow`, `tomorrow afternoon`, `day after
-   tomorrow`, `next Friday`, or a calendar date like `2025-04-20`.
-3. With both in hand, the `rebook_flight` tool runs: it selects a flight from
-   `.flights.sqlite`, records the rebooking in a `rebookings` table in the same
-   database, and returns a confirmation reference.
-4. If the booking reference has an email address on file (the
-   `rebook_email_map` table), a confirmation is emailed via Resend. An unknown
-   reference still rebooks, but no email is sent and the result says so.
+An archived copy of the SAA Conditions of Carriage PDF is kept in
+`data_sources/archive/`; it is not part of the default ingestion directory.
 
-The rebooking conversation stays on the tool path across turns: a follow-up
-that contains only a booking reference (`HRM-9B4770`) or a date
-(`tomorrow afternoon`) is recognised as part of the flow, not a new question.
+## MCP servers and tools
 
-## Baggage guidance
+Both servers use the stdio transport.
 
-Lost, delayed, and unclaimed-bag questions are answered deterministically and
-in-process (`app/agents/baggage.py`) — no external system, no LLM invention.
-The bot lists the three places to look and then asks whether the passenger
-wants a human agent:
+| Server | Run | Tools |
+|---|---|---|
+| `hermes-flights` | `python -m services.flights_mcp` | `get_flight_status(flight_no, date?)`, `list_delays(route?, date?, min_delay?)` |
+| `hermes-ops` | `python -m services.ops_mcp` | `search_flights`, `create_booking`, `rebook_flight`, `confirm_rebook`, plus agent-only `issue_ticket`, `mpesa_stk_push`, `verify_payment` |
 
-1. **Arrival baggage claim** — JKIA Terminal 1A (`BAGGAGE_ARRIVAL_CLAIM`).
-2. **Airport Lost & Found desk** — JKIA Terminal 1A (`BAGGAGE_LOST_AND_FOUND`).
-3. **WorldTracer online tracking** — `WORLDTRACER_URL`, using the bag tag or
-   baggage-receipt reference.
+The backend is a real MCP consumer: the LangGraph agent calls the flight tools
+over MCP, and the ops tools back booking/rebooking. If a server is unavailable,
+the same functions are called in-process so a turn does not fail. Set
+`FLIGHTS_MCP_ENABLED=false` or `OPS_MCP_ENABLED=false` to skip the MCP path.
 
-The answer carries two quick-reply chips ("Connect me to a human" /
-"It's something else") so the next step is one click; choosing the human chip
-routes through the normal hard escalation.
+## Models
 
-## Telegram channel
+| Purpose | Model | Runtime |
+|---|---|---|
+| Embeddings | `BAAI/bge-small-en-v1.5` (384 dimensions) | CPU via `sentence-transformers` |
+| Sentiment | `cardiffnlp/twitter-roberta-base-sentiment-latest` | CPU via `transformers` |
+| Answering / intent | Groq `openai/gpt-oss-120b` with `openai/gpt-oss-20b` fallback; DeepSeek as backup | External OpenAI-compatible API |
 
-A Telegram adapter runs inside the backend when `TELEGRAM_BOT_TOKEN` is set. It
-uses long polling (no public webhook needed). Each Telegram chat maps to one
-passenger and one active conversation; agent replies from the dashboard are
-relayed back to the chat through the in-process conversation hub.
+Sentiment is a signed score in `[-1, 1]` (`P(positive) - P(negative)`). A score
+below `-0.75` for two consecutive passenger turns is a soft escalation trigger.
 
-## Email delivery
+## Workflow
 
-Rebooking confirmations go out through **Resend** (`services/email_real.py`).
-With no `RESEND_API_KEY`, the sender falls back to a local outbox
-(`EMAIL_OUTBOX_DIR`), so local runs and the test suite need no credentials.
+```text
+ingest (parse → chunk → embed) → pgvector
+passenger turn → greeting check → sentiment → intent classification → route
+  ├─ hard escalation (safety / explicit human request) → escalation queue
+  └─ retrieve → flight lookup → baggage lookup → LLM answer (streamed)
+       └─ soft escalation offers a "Connect me to a human" quick reply
+agent dashboard → claim → reply / issue e-ticket → resolve
+```
 
-## Flight schedule (mock) + MCP server
+Booking adds `search_flights` → `create_booking` (held booking + pending payment)
+→ payment card (M-Pesa phone captured browser-side) → payment callback/poller →
+agent issues e-ticket. Rebooking runs through the ops MCP tools and can email a
+confirmation.
 
-There is no real KQ flight data in this prototype, so flight questions are
-answered from a simulated schedule (`services/flight_delays.py`): a small table
-of invented routes and times, with delays rolled from a date-seeded RNG.
-Results are **stable for a whole calendar day** and regenerate the next day.
-Rebookings are recorded separately, so they never disturb the daily roll.
+## Run locally
 
-The same functions are exposed as a standalone **MCP server** so any MCP client
-(Claude Desktop, IDEs, scripting) can use them:
+### Docker (recommended)
 
 ```bash
-.venv/bin/python -m services.flights_mcp     # stdio transport by default
+cp .env.example .env          # set GROQ_API_KEY (or DEEPSEEK_API_KEY)
+docker compose up --build -d
 ```
 
-Tools: `get_flight_status(flight_no, date?)` and
-`list_delays(route?, date?, min_delay?)`.
+Open:
 
-The bot queries these tools through an MCP stdio client
-(`app/agents/mcp_client.py`), so it is a real MCP consumer rather than a second
-in-process caller. If the server is unreachable the client falls back to the
-in-process library, so a flight question never takes the whole turn down. Set
-`FLIGHTS_MCP_ENABLED=false` to skip MCP entirely. Smoke test:
-`.venv/bin/python tests/mcp_flights_smoke.py` (also covered by
-`tests/test_mcp_client.py` under pytest).
+- Web app: <http://localhost:5173>
+- API docs (Swagger UI): <http://localhost:8000/docs>
 
-## Project layout
+Compose starts PostgreSQL 16 + pgvector, ingests the knowledge base once, then
+starts the API and frontend. The first startup downloads the CPU models and can
+take several minutes:
 
-```
-app/            FastAPI backend (routes, models, auth, agents)
-app/agents/     LangGraph nodes, LLM client, tool calling, turn orchestration
-app/channels/   Channel adapters (Telegram long polling)
-services/       Flight-delay + rebooking mock libraries, email senders, MCP server
-ingest/         Document ingestion + refresh (PDFs, KQ FAQ scrape)
-evals/          Golden-set evaluation harness (dataset, runner, scoring)
-frontend/       React app (chat widget + agent dashboard)
-tests/          Unit tests (pytest) + live smoke harnesses (e2e WS, MCP flights)
-data_sources/   Local documents fed to the vector store
+```bash
+docker compose logs -f kb-init
+docker compose logs -f backend
 ```
 
-## Data & refresh
+### Without Docker
 
-Sources: SAA Conditions of Carriage, KQ self-rebooking FAQ (PDFs), and scraped
-KQ FAQ web pages. When a source changes, re-run:
+Prerequisites: Python 3.11, Node 18+, PostgreSQL 16 with the `pgvector`
+extension, and an LLM API key.
+
+```bash
+# 1. Database
+sudo -u postgres psql -c "CREATE DATABASE hermes;"
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+
+# 2. Backend
+cp .env.example .env            # set GROQ_API_KEY or DEEPSEEK_API_KEY
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m ingest.run --embed    # populate the knowledge base
+uvicorn app.main:app --reload   # http://localhost:8000
+
+# 3. Frontend
+cd frontend
+npm install
+npm run dev                     # http://localhost:5173
+```
+
+To force a full re-embed or rebuild the corpus:
 
 ```bash
 python -m ingest.run --embed --force
+python -m ingest.run --embed --reset
 ```
 
-Refresh uses content hashing: only chunks whose source changed are
-re-chunked/re-embedded; unchanged sources are left untouched.
+## Assumptions and prototype limits
 
-## Testing
+- **Mock operational data.** The MCP servers and tool calls read mock SQLite
+  data. They mimic the shape of Kenya Airways systems but are not connected to
+  the real ones and are nowhere near as complete.
+- **Small schedule.** Only a handful of invented routes and flights are seeded
+  (for example NBO–LHR, NBO–DXB, NBO–MBA).
+- **One-way flights only.** Fares are a flat demo amount; no return itineraries.
+- **Simulated delays.** Delay status is generated from a date-seeded RNG and is
+  stable for a calendar day.
+- **Email fallback.** Without `RESEND_API_KEY`, confirmation emails are written
+  to the local `.mock_emails/` outbox.
+- **Payments.** With no Daraja credentials, the M-Pesa provider runs in simulated
+  mode. Numbers ending `0000` fail and `1111` cancel.
+- **Not production-ready.** Default secrets, no rate limiting, and local-only
+  ports are intentional for the prototype.
 
-```bash
-.venv/bin/python -m pytest tests/ -q     # unit suite
-.venv/bin/ruff check app services tests  # lint (the CI gate)
-```
+## Documentation
 
-Live harnesses (need the backend running):
-`.venv/bin/python tests/e2e_ws.py` and `.venv/bin/python tests/mcp_flights_smoke.py`.
+- [System architecture](docs/system-architecture.md) — components, flow, data,
+  configuration, testing, screenshots.
+- [API reference](docs/api.md) — REST endpoints, WebSocket protocols, payment
+  and escalation flows.
 
-## Evaluation
-
-The golden-set harness drives the live backend over HTTP and scores each answer
-deterministically (must-include / must-avoid terms, escalation, and citation
-checks). There is no LLM judge and no A/B comparison: a run reflects the
-current pipeline only.
-
-```bash
-.venv/bin/python -m evals.run                  # full golden set
-.venv/bin/python -m evals.run --fast           # quick subset
-.venv/bin/python -m evals.run --concurrency 8  # more parallel cases
-.venv/bin/python -m evals.run --only rebook-full-flow
-```
-
-Results are written to `evals/report.json`; the process exits non-zero when any
-case fails, so CI can gate on it. The backend must be running and the LLM quota
-must be available (back-to-back runs can hit provider rate limits).
-
-## Branches
-
-- `main` is the stable line.
-- `dev` is the integration branch for ongoing work.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, commit conventions,
-and the pull-request checklist.
-
-## Cost notes
-
-- Embeddings + sentiment run on CPU inside the backend (free).
-- Retain the managed LLM API route; self-hosting a GPU only breaks even
-  around ~12M output tokens/month, far above prototype volume.
-- pgvector replaces a dedicated vector DB (e.g. Pinecone) for free at this scale.
-
-## Differentiation roadmap
-
-Shipped: rebooking via function calling (with real email confirmations),
-golden-set eval harness, Telegram adapter. Remaining: agent assist drafts,
-browser voice widget, auto-translate.
+Contributor workflow: [CONTRIBUTING.md](CONTRIBUTING.md).

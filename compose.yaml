@@ -1,0 +1,75 @@
+x-backend-common: &backend-common
+  build: .
+  image: hermes-backend:latest
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/hermes
+    FLIGHTS_DB_PATH: /app/data/flights.sqlite
+    EMAIL_OUTBOX_DIR: /app/data/mock_emails
+    HF_HOME: /app/.cache/huggingface
+  volumes:
+    - backend_data:/app/data
+    - model_cache:/app/.cache/huggingface
+    - knowledge_sources:/app/data_sources
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: hermes
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hermes"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # One-shot: seed the sources volume, then parse + embed every document once.
+  # Exits 0 even when a remote source fails, so the API can still start with
+  # whatever was ingested (the local PDFs almost always succeed).
+  kb-init:
+    <<: *backend-common
+    command: >
+      sh -c "python -m ingest.run --embed ||
+             echo '[warn] KB ingestion incomplete; starting API anyway'"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    <<: *backend-common
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      kb-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      # First startup downloads and warms the CPU inference models.
+      start_period: 10m
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  backend_data:
+  model_cache:
+  knowledge_sources:

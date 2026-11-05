@@ -49,6 +49,13 @@ class EscalationStatus(str, enum.Enum):
     RESOLVED = "resolved"
 
 
+class BookingStatus(str, enum.Enum):
+    HELD = "held"  # created, awaiting payment
+    PAID = "paid"  # payment verified, not yet ticketed
+    TICKETED = "ticketed"  # e-ticket issued
+    CANCELLED = "cancelled"
+
+
 def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
     """`values_callable` for sqlalchemy.Enum: persist member VALUES (lowercase).
 
@@ -110,6 +117,11 @@ class Conversation(Base):
     # Soft-escalation offers already made: after a couple the bot hands off to a
     # human rather than asking again (see `settings.soft_escalation_max_offers`).
     soft_offers: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Structured memory slots extracted from the conversation, so the bot never
+    # re-asks for something the passenger already gave it:
+    # {"ticket_number", "email", "phone", "new_date", "selected_flight",
+    #  "tracking_ref"}. See `app.agents.facts`.
+    facts: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -139,6 +151,11 @@ class Message(Base):
     # [{"label": str, "value": str}, ...]. Clicking sends `value` as the next
     # passenger message (used by the soft-escalation offer, among others).
     actions: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Booking payment card rendered under a bot message. The card collects the
+    # M-Pesa number directly, so it never passes through the LLM.
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        _uuid_type(), ForeignKey("payments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
@@ -222,3 +239,71 @@ class RebookEmailMap(Base):
     ticket_number: Mapped[str] = mapped_column(String(20), primary_key=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Booking(Base):
+    """A passenger reservation, keyed by PNR.
+
+    Used for identity inheritance (a logged-in passenger's profile email maps to
+    their bookings) and by the in-chat booking flow. Prototype rows are seeded;
+    no real reservation system sits behind this.
+    """
+
+    __tablename__ = "bookings"
+
+    id: Mapped[uuid.UUID] = mapped_column(_uuid_type(), primary_key=True, default=uuid.uuid4)
+    pnr: Mapped[str] = mapped_column(String(12), unique=True, index=True)
+    passenger_id: Mapped[uuid.UUID | None] = mapped_column(
+        _uuid_type(), ForeignKey("passengers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    passenger_email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    passenger_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    flight_no: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    origin: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    destination: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    depart_date: Mapped[str | None] = mapped_column(String(10), nullable=True)  # YYYY-MM-DD
+    depart_time: Mapped[str | None] = mapped_column(String(8), nullable=True)  # HH:MM
+    status: Mapped[BookingStatus] = mapped_column(
+        Enum(BookingStatus, name="booking_status", values_callable=_enum_values),
+        default=BookingStatus.HELD,
+    )
+    eticket_number: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), default="KES", server_default="KES")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PaymentStatus(str, enum.Enum):
+    PENDING = "pending"
+    SUCCESS = "success"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    TIMEOUT = "timeout"
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id: Mapped[uuid.UUID] = mapped_column(_uuid_type(), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    pnr: Mapped[str] = mapped_column(String(12), index=True)
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    amount: Mapped[float] = mapped_column(Float)
+    currency: Mapped[str] = mapped_column(String(3), default="KES", server_default="KES")
+    checkout_request_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
+    merchant_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[PaymentStatus] = mapped_column(
+        Enum(PaymentStatus, name="payment_status", values_callable=_enum_values),
+        default=PaymentStatus.PENDING,
+    )
+    receipt: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    raw: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

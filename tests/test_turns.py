@@ -4,12 +4,19 @@ from app.agents.turns import citations_from_chunks, strip_source_section, strip_
 
 
 class StripSourceUrlsTest(unittest.TestCase):
-    def test_strips_bare_https_url(self):
+    def test_keeps_kenya_airways_page_links(self):
+        # A KQ link is the passenger's next step, not a citation: dropping it
+        # used to leave "go to  and fill in the form".
         text = "See https://www.kenya-airways.com/baggage for details."
-        self.assertEqual(strip_source_urls(text), "See for details.")
+        self.assertEqual(strip_source_urls(text), text)
+
+    def test_strips_third_party_bare_url(self):
+        text = "See https://example.com/baggage for details."
+        self.assertNotIn("example.com", strip_source_urls(text))
 
     def test_strips_www_url(self):
-        self.assertEqual(strip_source_urls("More at www.example.com now"), "More at now")
+        cleaned = strip_source_urls("More at www.example.com now")
+        self.assertNotIn("example.com", cleaned)
 
     def test_keeps_markdown_link_label(self):
         text = "Read [Baggage rules](https://example.com/baggage) carefully."

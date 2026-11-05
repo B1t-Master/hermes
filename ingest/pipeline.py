@@ -3,9 +3,14 @@ import sys
 
 from ingest.chunker import chunk_text
 from ingest.embedder import Embedder
-from ingest.parser import parse_source
+from ingest.parser import boilerplate_ratio, parse_source
 from ingest.sources import Source
 from ingest.store import Store
+
+# A page shorter than this has nothing worth retrieving.
+MIN_CONTENT_CHARS = 300
+# Above this share of site furniture the page is navigation, not content.
+MAX_BOILERPLATE_RATIO = 0.5
 
 
 class IngestReport:
@@ -59,6 +64,24 @@ async def ingest_sources(
         if not raw.strip():
             report.failed.append((source.key, "empty content"))
             print(f"[warn] {source.key}: empty content, skipped", file=sys.stderr)
+            continue
+
+        # Quality gate: a page that is mostly site furniture would otherwise
+        # be embedded and retrieved as if it were an answer.
+        if len(raw.strip()) < MIN_CONTENT_CHARS:
+            report.failed.append(
+                (source.key, f"too little content ({len(raw.strip())} chars)")
+            )
+            print(
+                f"[warn] {source.key}: too little content, skipped", file=sys.stderr
+            )
+            continue
+        junk = boilerplate_ratio(raw)
+        if junk > MAX_BOILERPLATE_RATIO:
+            report.failed.append((source.key, f"mostly navigation ({junk:.0%})"))
+            print(
+                f"[warn] {source.key}: mostly navigation, skipped", file=sys.stderr
+            )
             continue
 
         hash_value = content_hash(raw)

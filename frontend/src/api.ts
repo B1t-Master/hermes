@@ -7,8 +7,10 @@ import type {
   Message,
   Metrics,
   Passenger,
+  Payment,
   QueueEscalation,
   Role,
+  SendTicketResult,
   Token,
   Turn,
 } from "./types";
@@ -71,6 +73,9 @@ export const api = {
     request<Token>("/auth/anonymous", { method: "POST", body: data }),
   agentLogin: (data: { username: string; password: string }) =>
     request<Token>("/auth/agent/login", { method: "POST", body: data }),
+  /* exchange a still-valid token for a fresh one */
+  refresh: (token: string) =>
+    request<Token>("/auth/refresh", { method: "POST", token }),
   agentMe: (token: string) => request<AgentInfo>("/auth/agent/me", { token }),
 
   /* conversations + messages (passenger) */
@@ -95,6 +100,22 @@ export const api = {
       body: { rating },
     }),
 
+  /* in-chat M-Pesa payment card (passenger) */
+  getPayment: (token: string, paymentId: string) =>
+    request<Payment>(`/chat/payments/${paymentId}`, { token }),
+  submitPaymentPhone: (token: string, paymentId: string, phone: string) =>
+    request<Payment>(`/chat/payments/${paymentId}/phone`, {
+      method: "POST",
+      token,
+      body: { phone },
+    }),
+  submitPaymentEmail: (token: string, paymentId: string, email: string) =>
+    request<Payment>(`/chat/payments/${paymentId}/email`, {
+      method: "POST",
+      token,
+      body: { email },
+    }),
+
   /* escalation queue (agent) */
   queue: (token: string, status = "active") =>
     request<QueueEscalation[]>(`/agents/escalations?status=${status}`, { token }),
@@ -102,6 +123,13 @@ export const api = {
   metrics: (token: string) => request<Metrics>("/agents/metrics", { token }),
   escalationMessages: (token: string, escalationId: string) =>
     request<Message[]>(`/agents/escalations/${escalationId}/messages`, { token }),
+  agentGetPayment: (token: string, paymentId: string) =>
+    request<Payment>(`/agents/payments/${paymentId}`, { token }),
+  sendTicket: (token: string, paymentId: string) =>
+    request<SendTicketResult>(`/agents/payments/${paymentId}/send-ticket`, {
+      method: "POST",
+      token,
+    }),
   claim: (token: string, escalationId: string) =>
     request<Escalation>(`/agents/escalations/${escalationId}/claim`, {
       method: "POST",

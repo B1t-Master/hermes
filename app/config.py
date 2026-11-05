@@ -49,16 +49,18 @@ class Settings(BaseSettings):
 
     # --- Soft escalation (ask before handing off) ---
     # Hard triggers (safety, explicit "talk to a human") always escalate
-    # immediately. The softer triggers (a negative-sentiment streak, or a
-    # conversation the bot cannot close) first offer the passenger options and
-    # ask. Set false to restore the old escalate-immediately behaviour.
+    # immediately. The softer triggers (compensation, a negative-sentiment
+    # streak, or a conversation the bot cannot close) answer the passenger
+    # first and offer a "Connect me to a human" quick reply beside the answer.
+    # Set false to restore the old escalate-immediately behaviour.
     soft_escalation_enabled: bool = True
     # After this many unanswered offers, hand off to a human anyway so nobody
     # gets stuck in a loop.
     soft_escalation_max_offers: int = 2
-    # Compensation/refund requests escalate immediately by default (money and
-    # policy are involved). Set false to make them offer options first too.
-    escalate_on_compensation: bool = True
+    # Compensation/refund requests used to escalate immediately, which handed a
+    # first question straight to a human with no answer at all. They now get an
+    # answer plus the hand-off quick reply, like the other soft triggers.
+    escalate_on_compensation: bool = False
 
     # --- Retrieval size (prompt token budget) ---
     # Lower k / a per-chunk cap shrink each request's prompt. Helpful on
@@ -101,11 +103,44 @@ class Settings(BaseSettings):
     )
     worldtracer_url: str = "https://www.worldtracer.aero/"
 
-    # --- Flight MCP client ---
+    # --- Official KQ contact points ---
+    # Grounded next steps for questions the knowledge base does not cover, so
+    # the bot can point somewhere real instead of offering a hand-off.
+    kq_help_url: str = "https://www.kenya-airways.com/en-ke/help/"
+    kq_manage_booking_url: str = (
+        "https://www.kenya-airways.com/en-ke/book-manage/manage-booking/"
+    )
+    kq_contact_phone: str = "+254 20 3274747"
+    kq_contact_hours: str = "24 hours a day"
+
+    # --- Flight / Ops MCP clients ---
     # Answer flight status/delay questions through the hermes-flights MCP
     # server (stdio). Set false to call the in-process library directly; the
     # client also falls back on its own when the server is unreachable.
     flights_mcp_enabled: bool = True
+    # Booking/rebooking/tracking operations go through the hermes-ops MCP
+    # server. The tool layer falls back to in-process implementations on error.
+    ops_mcp_enabled: bool = True
+
+    # --- Safaricom Daraja (M-Pesa) ---
+    # provider: auto | daraja | simulated. "auto" uses Daraja when the consumer
+    # key/secret/shortcode/passkey are configured and falls back to the
+    # deterministic simulated provider otherwise.
+    mpesa_provider: str = "auto"
+    mpesa_env: str = "sandbox"  # sandbox | production
+    mpesa_consumer_key: str = ""
+    mpesa_consumer_secret: str = ""
+    mpesa_shortcode: str = ""
+    mpesa_passkey: str = ""
+    mpesa_callback_url: str = ""
+    # Optional shared secret appended to the callback URL as ?token=... .
+    mpesa_callback_secret: str = ""
+    mpesa_paybill: str = ""
+    mpesa_timeout_seconds: float = 10.0
+    mpesa_stk_query_interval_seconds: float = 2.0
+    mpesa_stk_query_max_attempts: int = 60
+    # Simulated provider only: how long before the fake STK push resolves.
+    mpesa_simulate_delay_seconds: float = 6.0
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -145,6 +180,34 @@ class Settings(BaseSettings):
     @property
     def is_llm_configured(self) -> bool:
         return bool(self.groq_api_key or self.deepseek_api_key)
+
+    @property
+    def mpesa_daraja_configured(self) -> bool:
+        """Whether the Daraja credentials needed for an STK push are present."""
+        return bool(
+            self.mpesa_consumer_key
+            and self.mpesa_consumer_secret
+            and self.mpesa_shortcode
+            and self.mpesa_passkey
+        )
+
+    @property
+    def mpesa_effective_provider(self) -> str:
+        """Resolve ``auto`` to the provider that will actually be used."""
+        requested = (self.mpesa_provider or "auto").strip().lower()
+        if requested == "simulated":
+            return "simulated"
+        if requested == "daraja":
+            return "daraja"
+        return "daraja" if self.mpesa_daraja_configured else "simulated"
+
+    @property
+    def mpesa_callback(self) -> str:
+        """Callback URL registered with Safaricom (HTTPS, no 'mpesa' path)."""
+        base = self.mpesa_callback_url or "https://example.com/daraja/callback"
+        if self.mpesa_callback_secret and "?" not in base:
+            base = f"{base}?token={self.mpesa_callback_secret}"
+        return base
 
     @property
     def telegram_enabled(self) -> bool:

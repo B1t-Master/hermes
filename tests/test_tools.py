@@ -72,6 +72,24 @@ class DetectRebookTest(unittest.TestCase):
         history = [{"role": "user", "content": "please rebook my cancelled flight"}]
         self.assertFalse(tools.detect_rebook_request("What is the baggage allowance?", history))
 
+    def test_own_booking_question_after_rebook_is_not_a_rebook_request(self):
+        # "What's my ticket number?" is a memory question: re-entering the tool
+        # flow made the bot ask for the booking reference it already had.
+        history = [
+            {"role": "user", "content": "please rebook my cancelled flight"},
+            {"role": "assistant", "content": "Please share your booking reference."},
+            {"role": "user", "content": "HRM-9B4770"},
+            {"role": "assistant", "content": "Rebooked to KQ100, reference HRM-1234567."},
+        ]
+        for query in (
+            "What's my ticket number?",
+            "what is my booking reference",
+            "Do you have my PNR?",
+            "tell me my flight number",
+            "remind me of my e-ticket number",
+        ):
+            self.assertFalse(tools.detect_rebook_request(query, history), query)
+
 
 class CallToolTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):

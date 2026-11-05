@@ -1,7 +1,31 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 import { api } from "./api";
 import type { Role } from "./types";
+
+/** Renew this long before the token expires. */
+const REFRESH_LEAD_MS = 5 * 60 * 1000;
+
+/** Read the JWT `exp` claim (milliseconds), or null when unreadable. */
+function tokenExpiry(token: string): number | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    const claims = JSON.parse(atob(padded)) as { exp?: unknown };
+    return typeof claims.exp === "number" ? claims.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
 
 interface AuthValue {
   token: string | null;
@@ -79,6 +103,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setRole(null);
   }, []);
+
+  /* Silently renew shortly before the token expires. A failed refresh means
+   * the session can no longer be extended, so the user is logged out. */
+  useEffect(() => {
+    if (!token) return;
+    const expiresAt = tokenExpiry(token);
+    if (expiresAt === null) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(
+      async () => {
+        try {
+          const res = await api.refresh(token);
+          if (!cancelled) persist(res.access_token, res.role);
+        } catch {
+          if (!cancelled) logout();
+        }
+      },
+      Math.max(0, expiresAt - Date.now() - REFRESH_LEAD_MS),
+    );
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [token, persist, logout]);
 
   const value = useMemo<AuthValue>(
     () => ({ token, role, login, register, anonymous, agentLogin, logout }),

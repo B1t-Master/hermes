@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import agents, auth, chat, kb, ws
+from app.api import agents, auth, chat, kb, mpesa, ws
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -88,19 +88,49 @@ async def lifespan(app: FastAPI):
             logger.exception(
                 "Flight MCP client failed to start; using the in-process service"
             )
+    # Start ops MCP server for booking/rebooking operations (Phase 4).
+    # Gated independently of flights_mcp_enabled so booking works even when
+    # the flights MCP server is disabled.
+    ops = None
+    if settings.ops_mcp_enabled:
+        try:
+            from app.agents.mcp_client import get_ops_client
+
+            ops = get_ops_client()
+            await ops.start()
+        except Exception:
+            logger.exception(
+                "Ops MCP client failed to start; using in-process fallbacks"
+            )
     telegram = None
     if settings.telegram_enabled:
         from app.channels.telegram import get_telegram_channel
 
         telegram = get_telegram_channel()
         await telegram.start()
+    # Resume M-Pesa pollers for payments that were in flight at shutdown.
+    from app.agents.payments import resume_pending_payments
+
+    await resume_pending_payments()
     try:
         yield
     finally:
+        from app.agents.payments import shutdown_payments
+
+        await shutdown_payments()
         if telegram is not None:
             await telegram.stop()
-        if flights is not None:
-            await flights.stop()
+        try:
+            from app.agents.mcp_client import shutdown_all
+
+            await shutdown_all()
+        except Exception:
+            pass
+        if flights is not None and not isinstance(flights, type(None)):
+            try:
+                await flights.stop()
+            except Exception:
+                pass
 
 
 app = FastAPI(
@@ -120,6 +150,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(agents.router)
+app.include_router(mpesa.router)
 app.include_router(ws.router)
 app.include_router(kb.router)
 

@@ -5,7 +5,7 @@
 {"id": "rebooking-auto", "question": "What happens if I do not rebook myself?", "expect_any": ["next available flight", "automatic", "email"], "expect_escalate": false, "expect_cite": true}
 {"id": "rebooking-bags", "question": "If I rebook, will my checked bags be transferred to the new flight?", "expect_any": ["transferred", "automatically"], "expect_escalate": false, "expect_cite": true}
 {"id": "rebooking-inbound", "question": "If my outbound flight changed, can I also change the inbound free of charge?", "expect_any": ["no", "travel agent", "contact center", "travel agency"], "expect_escalate": false, "expect_cite": true}
-{"id": "rebooking-refund", "question": "I no longer want to travel. How can I request a refund?", "expect_escalate": true, "fast": true}
+{"id": "rebooking-refund", "question": "I no longer want to travel. How can I request a refund?", "expect_any": ["refund", "24 hours", "online", "form"], "expect_escalate": false, "expect_cite": true, "fast": true}
 {"id": "rebooking-award", "question": "Does the self-rebooking tool rebook award tickets?", "expect_any": ["award", "yes"], "expect_escalate": false}
 {"id": "rebooking-other-airlines", "question": "Can the tool rebook another airline's ticket that includes a KQ sector?", "expect_any": ["reissued", "revalidation", "yes"], "expect_escalate": false}
 {"id": "rebook-asks-ticket", "question": "My flight KQ100 was cancelled. Please rebook me.", "expect_any": ["booking reference", "e-ticket", "ticket number"], "expect_escalate": false}

@@ -4,6 +4,7 @@ import { useAuth } from "./auth";
 import ChatWidget from "./ChatWidget";
 import Dashboard from "./Dashboard";
 import Logo from "./Logo";
+import authBanner from "./assets/kenya_airways_web_1200w.webp";
 
 export default function App() {
   const { token, role } = useAuth();
@@ -48,12 +49,13 @@ function AuthGate() {
   return (
     <main className="auth">
       <div className="auth-brand">
-        <Logo size={84} />
-        <div>
-          <h1>hermes</h1>
+        <Logo size={350} />
+        <div className="app-name">
+          <h1>Hermes</h1>
           <p className="tagline">Kenya Airways passenger support</p>
         </div>
       </div>
+      <img src={authBanner} className="auth-banner" alt="" />
       <form onSubmit={submit} noValidate={false}>
         {mode === "register" && (
           <input
@@ -90,7 +92,13 @@ function AuthGate() {
           onChange={set("password")}
           required
           minLength={6}
-          autoComplete={mode === "agent" ? "current-password" : mode === "register" ? "new-password" : "current-password"}
+          autoComplete={
+            mode === "agent"
+              ? "current-password"
+              : mode === "register"
+                ? "new-password"
+                : "current-password"
+          }
         />
         {error && <p className="error">{error}</p>}
         <button type="submit" disabled={busy}>
@@ -109,7 +117,10 @@ function AuthGate() {
         >
           {mode === "login" ? "Create an account" : "Back to sign in"}
         </button>
-        <button className="secondary" onClick={() => setMode(mode === "agent" ? "login" : "agent")}>
+        <button
+          className="secondary"
+          onClick={() => setMode(mode === "agent" ? "login" : "agent")}
+        >
           {mode === "agent" ? "Back to sign in" : "Agent sign in"}
         </button>
       </div>

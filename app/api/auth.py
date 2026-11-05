@@ -1,10 +1,14 @@
+import uuid
+
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import get_db
-from app.deps import get_current_agent, get_current_passenger
+from app.deps import bearer_scheme, get_current_agent, get_current_passenger
 from app.models import Agent, Passenger
 from app.schemas import (
     AgentCreate,
@@ -15,9 +19,24 @@ from app.schemas import (
     PassengerOut,
     Token,
 )
-from app.security import AGENT, PASSENGER, create_access_token, hash_password, verify_password
+from app.security import (
+    AGENT,
+    PASSENGER,
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    verify_password,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _credentials_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 @router.post("/register", response_model=PassengerOut, status_code=status.HTTP_201_CREATED)
@@ -114,6 +133,42 @@ async def agent_login(payload: dict, db: AsyncSession = Depends(get_db)):
 
     token = create_access_token(subject=str(agent.id), role=AGENT)
     return Token(access_token=token, role=AGENT)
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+):
+    """Exchange a still-valid token for a fresh one.
+
+    Both roles share this endpoint; the token's ``role`` claim decides which
+    account table is checked, so a deleted passenger/agent cannot refresh.
+    """
+    if credentials is None:
+        raise _credentials_error()
+    try:
+        payload = decode_access_token(credentials.credentials)
+    except jwt.InvalidTokenError:
+        raise _credentials_error() from None
+
+    role = payload.get("role")
+    model = {PASSENGER: Passenger, AGENT: Agent}.get(role)
+    try:
+        subject = uuid.UUID(payload["sub"])
+    except (KeyError, ValueError):
+        raise _credentials_error() from None
+    if model is None:
+        raise _credentials_error()
+
+    exists = (
+        await db.execute(select(model.id).where(model.id == subject))
+    ).scalar_one_or_none()
+    if exists is None:
+        raise _credentials_error()
+
+    token = create_access_token(subject=str(subject), role=role)
+    return Token(access_token=token, role=role)
 
 
 @router.get("/agent/me", response_model=AgentOut)

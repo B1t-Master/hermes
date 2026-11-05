@@ -41,6 +41,7 @@ def send_email(
     sender: str | None = None,
     api_key: str | None = None,
     outbox_dir: str | None = None,
+    html: str | None = None,
 ) -> dict:
     """Send ``body`` to ``to`` via Resend; fall back to the mock outbox.
 
@@ -52,7 +53,7 @@ def send_email(
 
     if not api_key:
         record = mock_email.send_email(
-            to, subject, body, sender=sender, outbox_dir=outbox_dir
+            to, subject, body, sender=sender, outbox_dir=outbox_dir, html=html
         )
         record["provider"] = "mock"
         return record
@@ -67,7 +68,7 @@ def send_email(
                 "to": [to],
                 "subject": subject,
                 "text": body,
-                "html": _to_html(body),
+                "html": html or _to_html(body),
             }
         )
         logger.info("Resend accepted email id=%s to=%s", (result or {}).get("id"), to)
@@ -82,7 +83,7 @@ def send_email(
     except Exception:
         logger.exception("Resend delivery failed; writing to mock outbox instead")
         record = mock_email.send_email(
-            to, subject, body, sender=sender, outbox_dir=outbox_dir
+            to, subject, body, sender=sender, outbox_dir=outbox_dir, html=html
         )
         record["provider"] = "mock-fallback"
         return record

@@ -1,16 +1,14 @@
-"""MCP client for the mock KQ flight service.
+"""MCP client manager for multiple stdio MCP servers.
 
-Flight status and delay questions are answered by the `hermes-flights` MCP
-server (`services/flights_mcp.py`) over stdio, the same tools any external MCP
-client uses, instead of importing `services.flight_delays` directly. This is
-what makes the bot a real MCP consumer rather than a second in-process caller.
+Supports:
+- `hermes-flights` (tracking/status/delays) - existing
+- `hermes-ops` (bookings/rebookings/tracking/operations) - new in Phase 4
 
-Lifecycle: a single background task owns the stdio session (anyio task groups
+Lifecycle: a single background task owns each stdio session (anyio task groups
 must be entered and exited in the same task, so we cannot open it per request).
 Requests await a ready event, then call tools on the shared session. If the
 server cannot be reached, lookups fall back to the in-process library so a
-flight question never takes the whole turn down; `FLIGHTS_MCP_ENABLED=false`
-skips MCP entirely.
+request never takes the whole turn down; MCP can be toggled via config.
 """
 
 from __future__ import annotations
@@ -33,14 +31,16 @@ from services import flight_delays
 logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SERVER_MODULE = "services.flights_mcp"
+_FLIGHTS_SERVER_MODULE = "services.flights_mcp"
+_OPS_SERVER_MODULE = "services.ops_mcp"
 
 
-class FlightsMCPClient:
-    """Persistent stdio MCP session against the mock flight server."""
+class MCPServerClient:
+    """Persistent stdio MCP session against any MCP server."""
 
-    def __init__(self, server_module: str = _SERVER_MODULE) -> None:
+    def __init__(self, server_module: str = _FLIGHTS_SERVER_MODULE, task_name: str = "flights-mcp") -> None:
         self._server_module = server_module
+        self._task_name = task_name
         self._task: asyncio.Task[None] | None = None
         self._session: ClientSession | None = None
         self._ready = asyncio.Event()
@@ -57,7 +57,7 @@ class FlightsMCPClient:
             self._ready = asyncio.Event()
             self._stop = asyncio.Event()
             self._error = None
-            self._task = asyncio.create_task(self._serve(), name="flights-mcp")
+            self._task = asyncio.create_task(self._serve(), name=self._task_name)
         await self._ready.wait()
         if self._error is not None:
             raise self._error
@@ -98,7 +98,7 @@ class FlightsMCPClient:
             with contextlib.suppress(BaseException):
                 await task
         except Exception:
-            logger.warning("Flights MCP shutdown raised", exc_info=True)
+            logger.warning("%s MCP shutdown raised", self._server_module, exc_info=True)
         self._task = None
         self._session = None
 
@@ -108,13 +108,47 @@ class FlightsMCPClient:
         await self.start()
         session = self._session
         if session is None:
-            raise RuntimeError("flights MCP session is not available")
+            raise RuntimeError(f"{self._server_module} MCP session is not available")
         result = await session.call_tool(name, arguments)
         if result.isError:
-            raise RuntimeError(f"flights MCP tool {name} failed: {result.content}")
+            raise RuntimeError(f"{self._server_module} MCP tool {name} failed: {result.content}")
         if not result.content:
             return None
-        return json.loads(result.content[0].text)
+        # FastMCP may return JSON in text blocks
+        content = result.content[0]
+        text = getattr(content, "text", None)
+        if text is None:
+            # try model_dump/str
+            if hasattr(content, "model_dump"):
+                data = content.model_dump()
+                if isinstance(data, dict) and "text" in data:
+                    text = data["text"]
+            if text is None:
+                text = str(content)
+        try:
+            return json.loads(text)
+        except Exception:
+            return text
+
+    async def list_tools(self):
+        """Discover available tools from this server."""
+        await self.start()
+        session = self._session
+        if session is None:
+            raise RuntimeError(f"{self._server_module} MCP session is not available")
+        return await session.list_tools()
+
+
+class FlightsClient:
+    """Flight status and delay helpers with MCP + fallback."""
+
+    def __init__(self, client: MCPServerClient | None = None) -> None:
+        if client is None:
+            client = MCPServerClient(_FLIGHTS_SERVER_MODULE, "flights-mcp")
+        self._client = client
+
+    async def start(self) -> None:
+        await self._client.start()
 
     async def status(self, flight_no: str, date: str | None = None) -> dict:
         """One flight's status, via MCP with an in-process fallback."""
@@ -123,7 +157,7 @@ class FlightsMCPClient:
             if date:
                 arguments["date"] = date
             try:
-                payload = await self.call_tool("get_flight_status", arguments)
+                payload = await self._client.call_tool("get_flight_status", arguments)
                 if isinstance(payload, dict) and payload:
                     return payload
             except Exception:
@@ -142,7 +176,7 @@ class FlightsMCPClient:
             if date:
                 arguments["date"] = date
             try:
-                payload = await self.call_tool("list_delays", arguments)
+                payload = await self._client.call_tool("list_delays", arguments)
                 if isinstance(payload, dict) and isinstance(payload.get("delays"), list):
                     return payload["delays"]
                 if isinstance(payload, list):
@@ -154,13 +188,72 @@ class FlightsMCPClient:
                 )
         return await asyncio.to_thread(flight_delays.list_delays, route, date)
 
+    async def call_tool(self, name: str, arguments: dict) -> object:
+        return await self._client.call_tool(name, arguments)
 
-_client: FlightsMCPClient | None = None
+    async def list_tools(self):
+        return await self._client.list_tools()
+
+    async def stop(self) -> None:
+        await self._client.stop()
+
+    @property
+    def _task(self):
+        return self._client._task
+
+    @property
+    def _session(self):
+        return self._client._session
+
+    @property
+    def _ready(self):
+        return self._client._ready
+
+    @property
+    def _stop_event(self):
+        return self._client._stop
 
 
-def get_flights_client() -> FlightsMCPClient:
-    """Process-wide MCP client singleton."""
-    global _client
-    if _client is None:
-        _client = FlightsMCPClient()
-    return _client
+# Keep the old name for backward compatibility
+class FlightsMCPClient(FlightsClient):
+    def __init__(self, server_module: str = _FLIGHTS_SERVER_MODULE, task_name: str = "flights-mcp") -> None:
+        client = MCPServerClient(server_module, task_name)
+        super().__init__(client)
+
+
+
+# Process-wide MCP client singletons
+_flights_client: MCPServerClient | None = None
+_ops_client: MCPServerClient | None = None
+_flights_helper: FlightsClient | None = None
+
+
+def get_flights_client() -> FlightsClient:
+    """Process-wide MCP client singleton for flights."""
+    global _flights_client, _flights_helper
+    if _flights_client is None:
+        _flights_client = MCPServerClient(_FLIGHTS_SERVER_MODULE, "flights-mcp")
+    if _flights_helper is None:
+        _flights_helper = FlightsClient(_flights_client)
+    return _flights_helper
+
+
+def get_ops_client() -> MCPServerClient:
+    """Process-wide MCP client singleton for ops (bookings/rebookings/tracking)."""
+    global _ops_client
+    if _ops_client is None:
+        _ops_client = MCPServerClient(_OPS_SERVER_MODULE, "ops-mcp")
+    return _ops_client
+
+
+async def shutdown_all() -> None:
+    """Stop all MCP clients gracefully."""
+    global _flights_client, _ops_client, _flights_helper
+    if _flights_client is not None:
+        await _flights_client.stop()
+    if _ops_client is not None:
+        await _ops_client.stop()
+    _flights_client = None
+    _ops_client = None
+    _flights_helper = None
+

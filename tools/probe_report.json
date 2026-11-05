@@ -1,0 +1,389 @@
+[
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/baggage-information/baggage-allowance/",
+    "path": "plan/baggage-information/baggage-allowance/",
+    "ok": true,
+    "chars": 1573,
+    "boilerplate": 0.0,
+    "has_table": true,
+    "preview": "Baggage Allowance Free Checked Baggage Allowance: Baggage allowance details shown are indications for Kenya Airways operated flights only and may be subject to change depending on aircraft operated on the day of travel. "
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/baggage-information/hand-baggage/",
+    "path": "plan/baggage-information/hand-baggage/",
+    "ok": true,
+    "chars": 1669,
+    "boilerplate": 0.0,
+    "has_table": true,
+    "preview": "Hand Baggage You may bring hand luggage on board the cabin during your journey with Kenya Airways in addition to the standard checked-in baggage allowance you are permitted to carry: You may bring hand luggage on board t"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/baggage-information/delayed-baggage/",
+    "path": "plan/baggage-information/delayed-baggage/",
+    "ok": true,
+    "chars": 398,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Delayed, Lost or Damaged Baggage If your baggage is damaged on arrival, or does not turn up: - Present yourself at the desk for file creation. - Details of your baggage will be taken and you will be offered immediate ass"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/baggage-information/lost-and-found-items/",
+    "path": "plan/baggage-information/lost-and-found-items/",
+    "ok": true,
+    "chars": 2393,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Lost and Found Items Lost a personal item while travelling with Kenya Airways? Let us help you locate and recover it. Reporting a Lost Item If you realize that you have misplaced a personal item, please report it as soon"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/baggage-information/baggage-restrictions/",
+    "path": "plan/baggage-information/baggage-restrictions/",
+    "ok": true,
+    "chars": 377,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Baggage Restrictions Please ensure that you do not pack items specified in this list in your carry-on or checked baggage. Medically necessary needles and syringes are exempt from these prohibitions if passengers have in "
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/baggage-information/special-baggage/",
+    "path": "plan/baggage-information/special-baggage/",
+    "ok": true,
+    "chars": 15079,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Special Baggage General - Special baggage is all baggage that, because of its nature, size, or weight, may be accepted only under certain conditions. - For acceptance of special baggage the conditions of carriage applies"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/baggage-information/conditions-of-carriage-baggage/",
+    "path": "plan/baggage-information/conditions-of-carriage-baggage/",
+    "ok": true,
+    "chars": 12174,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Baggage Conditions Article 8 Baggage You may carry some baggage, free of charge, subject to our conditions and limitations, which are available on our website Baggage Information. You will be required to pay a charge for"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/baggage-information/pet-carriage/",
+    "path": "plan/baggage-information/pet-carriage/",
+    "ok": true,
+    "chars": 2161,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Pet Carriage Live animals will not be accepted as checked-in Animal in Hold (AVIH) or Pet in Cabin (PETC) on Kenya Airways flights. Live animals shall be consigned as cargo only. Live animals will not be accepted as chec"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/baggage-information/dangerous-goods/",
+    "path": "plan/baggage-information/dangerous-goods/",
+    "ok": false,
+    "error": "HTTPStatusError: Client error '404 Not Found' for url 'https://www.kenya-airways.com/en-ke/plan/baggage-information/dangerous-goods/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/book-manage/post-booking/check-in/",
+    "path": "book-manage/post-booking/check-in/",
+    "ok": true,
+    "chars": 2753,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Check-in Escape the hassle of queues and maximize your time at the airport. Experience the convenience of online flight check-in \u2013 available from anywhere, at any time. For international flights, the online check-in wind"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/book-manage/post-booking/check-in/baggage-drop-off/",
+    "path": "book-manage/post-booking/check-in/baggage-drop-off/",
+    "ok": true,
+    "chars": 585,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Baggage Drop-off Counters Customers who have luggage to check in are provided with two options to streamline the process. They can either drop off their luggage at designated baggage drop-off counters or at the check-in "
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/book-manage/post-booking/travel-documents/",
+    "path": "book-manage/post-booking/travel-documents/",
+    "ok": false,
+    "error": "HTTPStatusError: Client error '404 Not Found' for url 'https://www.kenya-airways.com/en-ke/book-manage/post-booking/travel-documents/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/experience/at-the-airport/baggage-drop-off/",
+    "path": "experience/at-the-airport/baggage-drop-off/",
+    "ok": true,
+    "chars": 585,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Baggage Drop-Off Services Customers who have luggage to check in are provided with two options to streamline the process. They can either drop off their luggage at designated baggage drop-off counters or at the check-in "
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/experience/at-the-airport/kiosk-check-in/",
+    "path": "experience/at-the-airport/kiosk-check-in/",
+    "ok": true,
+    "chars": 685,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Streamlined Airport Check-in Process Arrival at Kiosk: Upon arriving at the airport, you'll spot a row of self-service kiosks designated for airline check-in. These kiosks are designed to streamline the check-in process "
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/experience/at-the-airport/lounge-services/",
+    "path": "experience/at-the-airport/lounge-services/",
+    "ok": true,
+    "chars": 2111,
+    "boilerplate": 0.0,
+    "has_table": true,
+    "preview": "You then proceed through to the formal lounge with a transition from the rain forest to the coastal landscape with the introduction of purple and blue tones. This is exemplified in the fabrics on the Giada Lounger Seat, "
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/experience/at-the-airport/boarding/",
+    "path": "experience/at-the-airport/boarding/",
+    "ok": false,
+    "error": "HTTPStatusError: Client error '404 Not Found' for url 'https://www.kenya-airways.com/en-ke/experience/at-the-airport/boarding/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/book-manage/manage-booking/change-booking/",
+    "path": "book-manage/manage-booking/change-booking/",
+    "ok": true,
+    "chars": 362,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Change Booking Once you are logged into manage your flights you can customize your booking, choose your preferred meals, seat and add a little extra sparkle to your journey with KQ upgrade Once you are logged into manage"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/book-manage/manage-booking/cancel-flight/",
+    "path": "book-manage/manage-booking/cancel-flight/",
+    "ok": true,
+    "chars": 454,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/book-manage/manage-booking/online-refunds/",
+    "path": "book-manage/manage-booking/online-refunds/",
+    "ok": true,
+    "chars": 4299,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Online Refunds You may be eligible for a refund on unused or partially unused Kenya Airways tickets, depending on the type of ticket you purchased: - Applicable taxes, fees and charges imposed by government or other auth"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/book-manage/manage-booking/request-for-your-refund/",
+    "path": "book-manage/manage-booking/request-for-your-refund/",
+    "ok": true,
+    "chars": 551,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Request Your Refund Thank you for contacting Kenya Airways for your refund request. Your refund will be processed as per your ticket rules and conditions. In order to process your request kindly fill in the form below an"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/book-manage/manage-booking/free-change-form/",
+    "path": "book-manage/manage-booking/free-change-form/",
+    "ok": true,
+    "chars": 305,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Free Change Form Request your Free change here as a result of COVID-19 Please note free change is only applicable If you purchased a ticket before 30th June, for travel between 1st Feb and 30th Sep 2020. If your ticket i"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/book-manage/manage-booking/upgrade-flight/",
+    "path": "book-manage/manage-booking/upgrade-flight/",
+    "ok": true,
+    "chars": 494,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Upgrade Flight Upgrade to Business Class You now have various options of upgrading to our award-winning business class on Kenya Airways. With an economy class ticket, upgrading to business class and enjoying award-winnin"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/book-manage/manage-booking/",
+    "path": "book-manage/manage-booking/",
+    "ok": true,
+    "chars": 600,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/book-manage/self-rebooking-service/",
+    "path": "book-manage/self-rebooking-service/",
+    "ok": true,
+    "chars": 3926,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "The Kenya Airways Flight Delays and Cancellations At Kenya Airways, your comfort and convenience are our top priorities. Unfortunately, due to operational factors such as weather conditions, air traffic control restricti"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/book-manage/search-book/flight-timetable/",
+    "path": "book-manage/search-book/flight-timetable/",
+    "ok": true,
+    "chars": 270,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Flight Timetable Find the flight schedules you need to make your dream vacation or international flight a reality. Explore our schedules today! Find the flight schedules you need to make your dream vacation or internatio"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/policies/24-hours-refund-policy/",
+    "path": "policies/24-hours-refund-policy/",
+    "ok": true,
+    "chars": 1061,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "In accordance with the U.S. Department of Transportation\u2019s customer service regulations, we are committed to providing our customers with flexible booking options for flights to/from the United States. When you book dire"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/policies/",
+    "path": "policies/",
+    "ok": true,
+    "chars": 454,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/help/your-trip/flight-delay-and-cancellations/",
+    "path": "help/your-trip/flight-delay-and-cancellations/",
+    "ok": true,
+    "chars": 454,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/help/your-trip/baggage-track-and-trace/",
+    "path": "help/your-trip/baggage-track-and-trace/",
+    "ok": true,
+    "chars": 454,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/help/your-trip/cancel-booking/",
+    "path": "help/your-trip/cancel-booking/",
+    "ok": true,
+    "chars": 454,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/help/your-trip/change-booking/",
+    "path": "help/your-trip/change-booking/",
+    "ok": true,
+    "chars": 454,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/help/your-trip/seats/",
+    "path": "help/your-trip/seats/",
+    "ok": true,
+    "chars": 454,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/help/faqs/baggage-restrictions/",
+    "path": "help/faqs/baggage-restrictions/",
+    "ok": true,
+    "chars": 454,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/help/faqs/compensation-on-delayed-damaged-or-lost-baggage/",
+    "path": "help/faqs/compensation-on-delayed-damaged-or-lost-baggage/",
+    "ok": true,
+    "chars": 454,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/help/faqs/delayed-baggage/",
+    "path": "help/faqs/delayed-baggage/",
+    "ok": true,
+    "chars": 454,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/help/faqs/travelling-with-an-infant/",
+    "path": "help/faqs/travelling-with-an-infant/",
+    "ok": true,
+    "chars": 454,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/help/faqs/extra-legroom-seat/",
+    "path": "help/faqs/extra-legroom-seat/",
+    "ok": true,
+    "chars": 454,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/help/faqs/",
+    "path": "help/faqs/",
+    "ok": true,
+    "chars": 9865,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "For example, if you are in the United Kingdom, booking a flight from Nairobi to London, the price displayed, and the price you need to pay, will be in British Pound. Please note that if you\u2019re paying with a different cur"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/help/customer-help/",
+    "path": "help/customer-help/",
+    "ok": true,
+    "chars": 824,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/special-care/infant-toddlers/",
+    "path": "plan/special-care/infant-toddlers/",
+    "ok": true,
+    "chars": 3229,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Infant & Toddlers At Kenya Airways, we understand that traveling with infants requires special attention and care. Here's how we aim to provide a seamless and comfortable experience for you and your little one: At Kenya "
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/special-care/unaccompanied-minors/",
+    "path": "plan/special-care/unaccompanied-minors/",
+    "ok": true,
+    "chars": 738,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Expert Support & Fees Expert Assistance: A dedicated team handles the booking process, ensuring all necessary information about the child, parents/guardians, and the designated pick-up person is collected accurately. Una"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/travel-information/travel-requirements/",
+    "path": "plan/travel-information/travel-requirements/",
+    "ok": true,
+    "chars": 527,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "We want your trip to be enjoyable and trouble-free. By filling out and submitting the form above, you may check the most recent information on the destination's passport and visa requirements prior to your journey with K"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/plan/travel-information/",
+    "path": "plan/travel-information/",
+    "ok": true,
+    "chars": 627,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "This website requires JavaScript to be enabled for full functionality. While some features may be limited, you can still browse core content and access essential information. Please enable JavaScript in your browser sett"
+  },
+  {
+    "url": "https://www.kenya-airways.com/en-ke/contact/",
+    "path": "contact/",
+    "ok": true,
+    "chars": 36994,
+    "boilerplate": 0.0,
+    "has_table": false,
+    "preview": "Get in Touch If you require further assistance, please select a location for the address and contact information of any local Kenya Airways office across the globe. Australia / New Zealand Address Australia Square Level "
+  }
+]

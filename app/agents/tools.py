@@ -1,9 +1,10 @@
 """LLM function calling for the hermes agent.
 
 Tool schemas are OpenAI-compatible. Flight tools go through the
-`hermes-flights` MCP server (`app.agents.mcp_client`); rebooking uses
-`services/rebook.py`. The bot and external MCP clients therefore share one
-source of truth for flight data.
+`hermes-flights` MCP server (`app.agents.mcp_client`); rebooking routes through
+the `hermes-ops` MCP server (with a direct fallback to `services/rebook.py`).
+Booking/rebooking/tracking are the MCP-scoped operations per the plan.
+Retrieval, profile lookups, baggage guidance, and escalation stay in-process.
 
 `run_tool_turn` drives the model/tool loop: the model may call tools, results
 are fed back as `tool` messages, and the loop returns once the model replies
@@ -17,19 +18,20 @@ import json
 import logging
 import re
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.agents.llm import LLM, get_llm
-from app.agents.mcp_client import get_flights_client
+from app.agents.mcp_client import get_flights_client, get_ops_client
 from app.config import settings
 from app.db import SessionLocal
-from app.models import RebookEmailMap
-from services import email_real, rebook
+from app.models import Booking
+from services import booking, email_real, rebook
 
 logger = logging.getLogger(__name__)
 
 # Cap on tool-calling rounds before we ask once more for a plain answer.
-MAX_TOOL_ROUNDS = 2
+# Booking needs search -> create -> answer, hence three rounds.
+MAX_TOOL_ROUNDS = 3
 
 # Action phrases that mark a genuine "move me to another flight" request.
 # Purely informational questions ("is self-rebooking free?", "can I rebook a
@@ -67,6 +69,9 @@ _RELATIVE_DATE = re.compile(
     re.IGNORECASE,
 )
 _ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+# Flight numbers like KQ100, KQ 720 - used to detect a passenger choosing one
+# of the rebooking alternatives presented by the assistant.
+_FLIGHT_NO = re.compile(r"\bKQ\s?\d{2,4}\b", re.IGNORECASE)
 
 # What our own assistant says while walking the passenger through a rebooking,
 # used to keep the tools available on the follow-up turns (the passenger's
@@ -80,6 +85,87 @@ _ASSISTANT_REBOOK_PROMPT = re.compile(
 
 def _has_rebook_intent(text: str) -> bool:
     return bool(_REBOOK_RE.search(text))
+
+
+# A genuine new-booking request. Word-boundary "book" deliberately does not
+# match "rebook"; rebooking is detected first and takes precedence.
+BOOKING_PATTERNS = (
+    r"\bbook (?:me |us )?(?:a |an )?(?:flight|ticket|seat|trip)\b",
+    r"\bbook (?:a |an )?(?:flight|ticket|seat|trip) (?:to|from)\b",
+    r"\bi (?:want|need|would like|'d like) to (?:book|fly|travel)\b",
+    r"\b(?:find|search|show)(?: me)? (?:some |any |available )?flights?\b",
+    r"\bflights? (?:from|to)\b",
+    r"\b(?:one[- ]way|return|round[- ]trip)\b[^.]{0,40}\b(?:flight|ticket)\b",
+    r"\b(?:flight|ticket) (?:to|from)\b",
+    r"\bavailability (?:for|on)\b",
+)
+_BOOKING_RE = re.compile("|".join(BOOKING_PATTERNS), re.IGNORECASE)
+
+# What our own assistant says while walking the passenger through a booking,
+# used to keep the tools available on follow-up turns that are just a city or
+# a date ("Mombasa", "next Friday").
+_ASSISTANT_BOOKING_PROMPT = re.compile(
+    r"payment card|which date|what date|travel date|departure date|"
+    r"where (?:are|would) you (?:flying|like to fly)|flying from|flying to|"
+    r"which route|search(?:ing)? flights|book (?:you|a flight)|"
+    r"fare|m-?pesa|phone number|mobile number",
+    re.IGNORECASE,
+)
+
+
+def _has_booking_intent(text: str) -> bool:
+    return bool(_BOOKING_RE.search(text))
+
+
+def _in_booking_flow(history: list[dict] | None) -> bool:
+    recent = (history or [])[-8:]
+    if any(
+        m.get("role") == "user" and _has_booking_intent(m.get("content", ""))
+        for m in recent
+    ):
+        return True
+    last_assistant = next(
+        (m for m in reversed(recent) if m.get("role") == "assistant"), None
+    )
+    return bool(
+        last_assistant
+        and _ASSISTANT_BOOKING_PROMPT.search(last_assistant.get("content", ""))
+    )
+
+
+def detect_booking_request(query: str, history: list[dict] | None = None) -> bool:
+    """Whether to offer the flight-search/booking tools on this turn.
+
+    Rebooking wins over booking; a question about the passenger's own booking
+    is answered from memory; follow-up turns stay in the flow while the
+    assistant is collecting a route or date.
+    """
+    if _OWN_BOOKING_QUESTION.search(query):
+        return False
+    if _has_rebook_intent(query):
+        return False
+    if _has_booking_intent(query):
+        return True
+    if not history or not _in_booking_flow(history):
+        return False
+    if booking.parse_route(query) or _looks_like_date(query):
+        return True
+    # Short answers during a booking flow (city, date, phone number) keep the
+    # tools available so the passenger can complete the booking.
+    return len(query.split()) <= 8
+
+
+# A question about the booking the passenger already has ("what's my ticket
+# number?") is not a request to rebook, even mid-flow: answering it from
+# memory is the whole point. Re-entering the tool flow made the bot ask for
+# the booking reference again after it had already rebooked with it.
+_OWN_BOOKING_QUESTION = re.compile(
+    r"\b(?:what(?:'s| is| was)?|whats|which|tell me|remind me|do you have|"
+    r"do you know|can you tell me|give me)\b[^?]{0,40}?\b(?:my|our)\b"
+    r"[^?]{0,30}?\b(?:ticket(?: number)?|booking reference|reference|pnr|"
+    r"e-?ticket(?: number)?|confirmation(?: reference)?|flight number)\b",
+    re.IGNORECASE,
+)
 
 
 def _looks_like_ticket(text: str) -> bool:
@@ -119,13 +205,18 @@ def detect_rebook_request(query: str, history: list[dict] | None = None) -> bool
     True for a direct rebook ask, or while a rebooking conversation is already
     underway and this turn supplies the booking reference or the new date (so
     the multi-turn flow keeps the tools available). Unrelated follow-ups stay
-    on the plain path.
+    on the plain path, and a question about the passenger's own booking
+    details ("what's my ticket number?") is answered from memory instead.
     """
+    if _OWN_BOOKING_QUESTION.search(query):
+        return False
     if _has_rebook_intent(query):
         return True
     if not history:
         return False
-    if not (_looks_like_ticket(query) or _looks_like_date(query)):
+    if not (
+        _looks_like_ticket(query) or _looks_like_date(query) or _FLIGHT_NO.search(query)
+    ):
         return False
     return _in_rebook_flow(history)
 
@@ -183,22 +274,23 @@ TOOL_SPECS = [
         "function": {
             "name": "rebook_flight",
             "description": (
-                "Rebook a passenger onto an available flight for a new travel "
-                "date. Requires the passenger's booking reference or e-ticket "
-                "number (the 13-digit ticket number or the PNR) AND the new "
-                "travel date (natural language like 'tomorrow' or 'tomorrow "
-                "afternoon' is understood); ask for whichever is missing "
-                "instead of calling this tool. The new "
-                "flight is chosen automatically. Emails a confirmation only "
-                "when the booking reference has an email address on file; the "
-                "result's `email_sent` field says whether one was sent."
+                "Rebook a passenger onto an available flight. Requires the "
+                "passenger's booking reference or e-ticket number and the new "
+                "travel date. When no flight number is supplied, returns the "
+                "available alternatives for the passenger to choose from. "
+                "When a flight number is supplied, confirms the rebooking. "
+                "Emails a confirmation only when the booking has an email on "
+                "file; ask for one if missing."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "flight_no": {
                         "type": "string",
-                        "description": "Optional original flight number, when known.",
+                        "description": (
+                            "Flight number chosen from the alternatives, e.g. "
+                            '"KQ444". Omit to see the available alternatives first.'
+                        ),
                     },
                     "ticket_number": {
                         "type": "string",
@@ -213,7 +305,7 @@ TOOL_SPECS = [
                         "description": (
                             "The passenger's new travel date, e.g. 'tomorrow', "
                             "'tomorrow afternoon', 'day after tomorrow' or "
-                            "YYYY-MM-DD. Ask for it if not provided."
+                            "YYYY-MM-DD."
                         ),
                     },
                     "passenger_name": {
@@ -225,7 +317,152 @@ TOOL_SPECS = [
                         "description": "Why the flight is being rebooked (delay, cancellation, schedule change).",
                     },
                 },
-                "required": ["ticket_number"],
+                "required": ["ticket_number", "new_date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "confirm_rebook",
+            "description": (
+                "Confirm a rebooking: update the existing booking with the new "
+                "flight and date, then email the new e-ticket. No payment is "
+                "needed because demo fares are constant for rebooks. Call this "
+                "after rebook_flight returns the alternatives and the passenger "
+                "has chosen one."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ticket_number": {
+                        "type": "string",
+                        "description": "The passenger's booking reference or e-ticket number.",
+                    },
+                    "new_date": {
+                        "type": "string",
+                        "description": "The new travel date, e.g. 'tomorrow' or YYYY-MM-DD.",
+                    },
+                    "flight_no": {
+                        "type": "string",
+                        "description": 'Flight number chosen from the alternatives, e.g. "KQ444".',
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "Contact email for the new e-ticket (optional).",
+                    },
+                    "passenger_name": {
+                        "type": "string",
+                        "description": "Passenger name, when known.",
+                    },
+                },
+                "required": ["ticket_number", "new_date", "flight_no"],
+            },
+        },
+    },
+]
+
+
+BOOKING_TOOL_SPECS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_flights",
+            "description": (
+                "Search Kenya Airways flights for one route and travel date. "
+                "Use this before create_booking; never invent flights or fares. "
+                "Origin and destination may be city names or IATA codes, and "
+                "the date may be natural language ('tomorrow', '12 December') "
+                "or YYYY-MM-DD."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "origin": {
+                        "type": "string",
+                        "description": 'Departure city or code, e.g. "Nairobi" or "NBO".',
+                    },
+                    "destination": {
+                        "type": "string",
+                        "description": 'Arrival city or code, e.g. "Mombasa" or "MBA".',
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Travel date, e.g. 'tomorrow', '12 December' or '2026-12-12'.",
+                    },
+                },
+                "required": ["origin", "destination", "date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_booking",
+            "description": (
+                "Create a held booking for a flight returned by search_flights. "
+                "The reply renders an M-Pesa payment card that collects the "
+                "passenger's number and starts the STK push, so never ask for "
+                "the number in chat. Call this once you have a flight number "
+                "and travel date. The result carries the PNR, fare, pending "
+                "payment id, and an awaiting_phone flag."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "flight_no": {
+                        "type": "string",
+                        "description": 'Flight number from search_flights, e.g. "KQ444".',
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Travel date for the chosen flight.",
+                    },
+                    "passenger_name": {
+                        "type": "string",
+                        "description": "Passenger name, when known.",
+                    },
+                    "passenger_email": {
+                        "type": "string",
+                        "description": "Passenger email for e-ticket delivery (optional).",
+                    },
+                    "passenger_phone": {
+                        "type": "string",
+                        "description": "Passenger phone number for M-Pesa payment (e.g. 0791351504).",
+                    },
+                },
+                "required": ["flight_no", "date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "complete_booking_email",
+            "description": (
+                "Add a passenger email to a paid booking and issue/email the "
+                "e-ticket. Manual/administrative use only: the passenger booking "
+                "flow ends at the payment card, and the agent dashboard issues "
+                "the e-ticket after payment succeeds. Do not call this during a "
+                "passenger conversation."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pnr": {
+                        "type": "string",
+                        "description": "Booking reference (PNR) from create_booking.",
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "Passenger email address.",
+                    },
+                    "passenger_name": {
+                        "type": "string",
+                        "description": "Passenger name, when known.",
+                    },
+                },
+                "required": ["pnr", "email"],
             },
         },
     },
@@ -248,28 +485,30 @@ def _rebook(arguments: dict) -> dict:
 
 
 async def _lookup_ticket_email(ticket_number: str | None) -> str | None:
-    """Destination email for a ticket, or None when it is not on file."""
+    """Destination email for a ticket, read from the booking's stored email.
+
+    Previously used ``RebookEmailMap``; now reads the single source of truth
+    ``Booking.passenger_email`` which is the email captured at booking time and
+    also used for e-ticket delivery.
+    """
     ticket = (ticket_number or "").strip()
     if not ticket:
         return None
     async with SessionLocal() as db:
-        row = (
-            await db.execute(
-                select(RebookEmailMap).where(
-                    func.upper(RebookEmailMap.ticket_number) == ticket.upper()
-                )
-            )
+        booking = (
+            await db.execute(select(Booking).where(Booking.pnr == ticket.upper()))
         ).scalar_one_or_none()
-    return row.email if row else None
+    if booking is None:
+        return None
+    return booking.passenger_email
 
 
 async def _send_rebook_confirmation(result: dict) -> None:
     """Email the confirmation when the ticket has an address on file.
 
-    Only tickets present in ``rebook_email_map`` get a confirmation; an
-    unknown ticket is reported back (no email) rather than defaulted. Delivery
-    problems are swallowed — the rebooking already succeeded, and the
-    passenger's answer must not fail because of mail.
+    Reads the passenger email from the booking (the same email used for the
+    e-ticket). The rebooking already succeeded, so delivery problems do not
+    block the flow.
     """
     to = await _lookup_ticket_email(result.get("ticket_number"))
     if not to:
@@ -303,6 +542,16 @@ def _run_tool(name: str, arguments: dict) -> dict:
     name = _canonical_name(name)
     if name == "rebook_flight":
         return _rebook(arguments)
+    if name == "confirm_rebook":
+        return asyncio.run(
+            booking.confirm_rebook(
+                arguments.get("ticket_number", ""),
+                arguments.get("new_date", ""),
+                arguments.get("flight_no", ""),
+                email=arguments.get("email") or None,
+                passenger_name=arguments.get("passenger_name") or None,
+            )
+        )
     return {"error": f"unknown tool: {name}"}
 
 
@@ -316,12 +565,89 @@ async def _call_flight_tool(name: str, arguments: dict) -> dict:
     return {"delays": await client.delays(arguments.get("route"), arguments.get("date"))}
 
 
-async def call_tool(name: str, arguments: dict) -> dict:
-    """Execute one tool; rebooking runs off-loop, flights over MCP."""
+async def _call_ops_tool(name: str, arguments: dict) -> dict:
+    """Booking/rebooking/tracking ops go through the ops MCP server."""
+    try:
+        client = get_ops_client()
+        payload = await client.call_tool(name, arguments)
+        if isinstance(payload, dict):
+            return payload
+        if payload is None:
+            return {}
+        return {"result": payload}
+    except Exception:
+        logger.warning("ops MCP call failed for %s; using in-process fallback", name, exc_info=True)
+        if name == "rebook_flight":
+            return _rebook(arguments)
+        if name == "confirm_rebook":
+            return await booking.confirm_rebook(
+                arguments.get("ticket_number", ""),
+                arguments.get("new_date", ""),
+                arguments.get("flight_no", ""),
+                email=arguments.get("email") or None,
+                passenger_name=arguments.get("passenger_name") or None,
+            )
+        if name == "search_flights":
+            return await asyncio.to_thread(
+                booking.search_flights,
+                arguments.get("origin", ""),
+                arguments.get("destination", ""),
+                arguments.get("date"),
+            )
+        if name == "create_booking":
+            return await booking.create_booking(
+                arguments.get("flight_no", ""),
+                arguments.get("date"),
+                passenger_name=arguments.get("passenger_name") or None,
+                passenger_email=arguments.get("passenger_email") or None,
+                passenger_id=arguments.get("passenger_id"),
+                conversation_id=arguments.get("conversation_id"),
+            )
+        if name == "complete_booking_email":
+            return await booking.complete_booking_email(
+                arguments.get("pnr", ""),
+                arguments.get("email", ""),
+                passenger_name=arguments.get("passenger_name") or None,
+            )
+        raise
+
+
+def _inject_booking_context(arguments: dict, context: dict | None) -> dict:
+    """Add internal identity to create_booking without trusting the model.
+
+    The LLM supplies the flight, date and (optionally) an email; the passenger
+    id, profile email/name and conversation id come from the authenticated
+    turn. The M-Pesa number is intentionally not injected: the payment card
+    collects it after the card is rendered.
+    """
+    if not context:
+        return arguments
+    merged = dict(arguments)
+    for key in ("passenger_id", "passenger_email",
+                "passenger_name", "conversation_id"):
+        if not merged.get(key) and context.get(key):
+            merged[key] = context[key]
+    return merged
+
+
+async def call_tool(name: str, arguments: dict, *, context: dict | None = None) -> dict:
+    """Execute one tool; flights via flights MCP, bookings/rebookings via ops MCP."""
     name = _canonical_name(name)
+    if name == "create_booking":
+        arguments = _inject_booking_context(arguments, context)
     try:
         if name in ("get_flight_status", "list_delays"):
             result = await _call_flight_tool(name, arguments)
+        elif name in (
+            "rebook_flight",
+            "confirm_rebook",
+            "search_flights",
+            "create_booking",
+            "issue_ticket",
+            "mpesa_stk_push",
+            "verify_payment",
+        ):
+            result = await _call_ops_tool(name, arguments)
         else:
             result = await asyncio.to_thread(_run_tool, name, arguments)
     except Exception as exc:
@@ -348,6 +674,8 @@ async def run_tool_turn(
     llm: LLM | None = None,
     on_token=None,
     max_rounds: int = MAX_TOOL_ROUNDS,
+    results: list[dict] | None = None,
+    context: dict | None = None,
 ) -> str:
     """Offer tools, execute any the model picks, and return the final answer.
 
@@ -355,6 +683,12 @@ async def run_tool_turn(
     no tools present makes gpt-oss try a tool call anyway, which Groq rejects
     with "Tool choice is none, but model called a tool". The loop stops as soon
     as the model replies with content instead of tool calls.
+
+    `results` collects the raw tool payloads (a rebooking result carries the
+    ticket, the new confirmation reference, the flight and the date). The
+    caller writes them into the conversation memory, so the booking is
+    remembered exactly as the tool reported it instead of being re-parsed out
+    of the model's prose.
     """
     llm = llm or get_llm()
     specs = tools if tools is not None else TOOL_SPECS
@@ -375,8 +709,12 @@ async def run_tool_turn(
         for call in tool_calls:
             function = call.get("function", {})
             result = await call_tool(
-                function.get("name", ""), _parse_arguments(function.get("arguments"))
+                function.get("name", ""),
+                _parse_arguments(function.get("arguments")),
+                context=context,
             )
+            if results is not None:
+                results.append(result)
             working.append(
                 {
                     "role": "tool",

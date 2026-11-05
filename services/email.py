@@ -33,6 +33,7 @@ def send_email(
     *,
     sender: str = DEFAULT_SENDER,
     outbox_dir: str | None = None,
+    html: str | None = None,
 ) -> dict:
     """Pretend to send an email and return the delivery record.
 
@@ -47,6 +48,8 @@ def send_email(
         "body": body,
         "sent_at": sent_at,
     }
+    if html:
+        record["html"] = html
     logger.info("MOCK EMAIL to=%s subject=%r\n%s", to, subject, body)
 
     directory = Path(outbox_dir or DEFAULT_OUTBOX_DIR)
@@ -58,6 +61,9 @@ def send_email(
             f"To: {to}\nFrom: {sender}\nSubject: {subject}\nSent: {sent_at}\n\n{body}\n",
             encoding="utf-8",
         )
+        if html:
+            html_path = directory / f"{stamp}-{_slug(subject)}.html"
+            html_path.write_text(html, encoding="utf-8")
         record["path"] = str(path)
     except OSError:
         logger.exception("Could not write mock email to %s", directory)
