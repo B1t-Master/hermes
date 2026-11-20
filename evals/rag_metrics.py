@@ -39,7 +39,7 @@ from pathlib import Path
 
 from app.agents.llm import LLM as LLMClient
 from app.agents.llm import LLMError
-from evals.recall import SKIPPED_IDS, case_terms, is_relevant
+from evals.recall import SKIPPED_IDS, case_ground_truth, chunk_key
 from evals.run import load_dataset
 from ingest.embedder import Embedder
 from ingest.store import get_store, rank_fragments
@@ -196,7 +196,8 @@ async def collect(answer_path: Path, k: int = K) -> dict:
     retrieval_mode = "vector" if embedder.available else "keyword-fallback"
 
     eval_cases = [
-        case for case in cases if case["id"] not in SKIPPED_IDS and case_terms(case)
+        case for case in cases
+        if case["id"] not in SKIPPED_IDS and case_ground_truth(case).terms
     ]
     embeddings: list[list[float]] | None = None
     if embedder.available and eval_cases:
@@ -213,17 +214,14 @@ async def collect(answer_path: Path, k: int = K) -> dict:
     for index, case in enumerate(eval_cases):
         embedding = embeddings[index] if embeddings else None
         ranked = rank_fragments(fragments, embedding, case["question"], k=k)
-        terms = case_terms(case)
-        relevant_total = sum(1 for f in fragments if is_relevant(terms, f.content))
-        relevant_hits = sum(1 for c in ranked if is_relevant(terms, c.content))
-        first_rank = next(
-            (
-                i
-                for i, c in enumerate(ranked, 1)
-                if is_relevant(terms, c.content)
-            ),
-            None,
-        )
+        truth = case_ground_truth(case)
+
+        def relevant(chunk, _truth=truth) -> bool:
+            return _truth.is_relevant(chunk_key(chunk), chunk.content)
+
+        relevant_total = sum(1 for f in fragments if relevant(f))
+        relevant_hits = sum(1 for c in ranked if relevant(c))
+        first_rank = next((i for i, c in enumerate(ranked, 1) if relevant(c)), None)
         answer = answers.get(case["id"], "")
 
         faithfulness, relevance, judged = await judge_case(
@@ -239,12 +237,13 @@ async def collect(answer_path: Path, k: int = K) -> dict:
             {
                 "id": case["id"],
                 "question": case["question"],
+                "ground_truth": "adjudicated" if truth.ids is not None else "term-proxy",
                 "total_relevant": relevant_total,
                 "retrieved_in_top_k": relevant_hits,
                 "relevant_ranks": [
                     i
                     for i, c in enumerate(ranked, 1)
-                    if is_relevant(terms, c.content)
+                    if relevant(c)
                 ],
                 "first_relevant_rank": first_rank,
                 "context_titles": [
