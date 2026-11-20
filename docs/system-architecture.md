@@ -215,8 +215,7 @@ source (PDF / DOCX / HTML / text)
 - If the embedding stack is unavailable, the retriever falls back to keyword
   search instead of failing the turn.
 
-The Docker Compose `kb-init` service runs ingestion once before the API starts.
-The backend also warms the embedding model and store connection at startup so
+The backend warms the embedding model and store connection at startup so
 the first passenger turn is not delayed by model loading.
 
 ## 5. Models
@@ -354,20 +353,21 @@ See [`.env.example`](../.env.example) for the full list and defaults.
 
 ## 11. Deployment and operations
 
-Docker Compose runs:
+The prototype runs as local processes:
 
-1. **db** — PostgreSQL 16 with pgvector.
-2. **kb-init** — one-shot ingestion; exits 0 even if a remote source fails.
-3. **backend** — FastAPI; waits for a healthy database and completed ingestion.
-4. **frontend** — built React app served by Nginx.
+1. **PostgreSQL 16 + pgvector** — the knowledge base and app tables.
+2. **ingest** — `python -m ingest.run --embed` populates the corpus (rerun with
+   `--force`/`--reset` to rebuild).
+3. **backend** — FastAPI via `uvicorn app.main:app`.
+4. **frontend** — Vite dev server (`npm run dev`) proxying `/api` and `/ws`
+   to the backend.
 
-Persistent named volumes hold PostgreSQL data, the flight SQLite database, the
-email outbox, the Hugging Face model cache, and knowledge-source uploads.
-Bundled source documents are refreshed from the image on each start; uploaded
-files stay in the volume.
+Persistent state lives outside the app: the PostgreSQL database, the flight
+SQLite database, the email outbox, the Hugging Face model cache, and knowledge
+source uploads in `data_sources/`.
 
-Health check: `GET /health`. In production, keep `.env` secrets out of image
-builds and change the default credentials before exposing the app.
+Health check: `GET /health`. Change the default credentials before exposing
+the app.
 
 ## 12. Testing and evaluation
 
@@ -376,6 +376,9 @@ python -m pytest tests/ -q          # unit suite
 ruff check app services tests       # lint gate
 python -m evals.run                 # golden-set evaluation (live backend)
 python -m evals.run --fast          # quick subset
+python -m evals.recall              # recall@k over the golden set
+python -m evals.rag_metrics         # RAG quality metrics
+python -m evals.summary             # merge all eval reports into evals/summary.json
 python tests/e2e_ws.py              # live WebSocket smoke test
 python tests/mcp_flights_smoke.py   # live MCP smoke test
 ```
@@ -383,6 +386,10 @@ python tests/mcp_flights_smoke.py   # live MCP smoke test
 The evaluation harness sends each golden case through the live HTTP API and
 scores answers deterministically (must-include/must-avoid terms, escalation, and
 citation checks). It exits non-zero if a case fails, so CI can gate on it.
+`evals.summary` merges the functional, recall, and RAG reports into a compact
+`evals/summary.json` suitable for documentation; pass `--full` to include one
+row per golden case. Missing optional reports degrade to nulls instead of
+failing the merge.
 
 ## 13. Screenshots
 

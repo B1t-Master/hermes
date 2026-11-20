@@ -29,6 +29,7 @@ Thumbs.db
 
 # Eval output
 evals/report.json
+evals/summary.json
 
 # Local data
 data_sources/*.tmp
