@@ -1,4 +1,4 @@
-# Hermes — Kenya Airways support bot (prototype)
+# Hermes - Kenya Airways support bot (prototype)
 
 [![CI](https://github.com/B1t-Master/hermes/actions/workflows/ci.yml/badge.svg)](https://github.com/B1t-Master/hermes/actions/workflows/ci.yml)
 [![Coverage Status](https://coveralls.io/repos/github/B1t-Master/hermes/badge.svg?branch=dev)](https://coveralls.io/github/B1t-Master/hermes?branch=dev)
@@ -13,8 +13,12 @@ mocked. See [Assumptions](#assumptions).
 
 ## Demo
 
-▶ [Watch the demo](demo.mp4) — end-to-end walkthrough of the chat widget,
-agent dashboard and M-Pesa booking flow.
+
+
+https://github.com/user-attachments/assets/10d35a8f-dc68-41db-9a2d-26796484e228
+
+
+
 
 ## Architecture
 
