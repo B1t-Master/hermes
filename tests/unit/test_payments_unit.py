@@ -381,10 +381,10 @@ class ResultsTest(unittest.IsolatedAsyncioTestCase):
         conversation = Conversation(id=payment.conversation_id)
         db = FakeDB()
         db.register(payment, booking, conversation)
-        with patch(f"{PAY_RESULTS}.SessionLocal", new=FakeSessionMaker(db)):
-            payload = await results.apply_payment_result(
-                payment.id, status="success", receipt="R9", result_code="0"
-            )
+        self._use_db(db)
+        payload = await results.apply_payment_result(
+            payment.id, status="success", receipt="R9", result_code="0"
+        )
         self.assertEqual(payment.status, PaymentStatus.SUCCESS)
         self.assertEqual(payment.receipt, "R9")
         self.assertEqual(booking.status, BookingStatus.PAID)
