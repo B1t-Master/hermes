@@ -1,4 +1,7 @@
-# Hermes — Kenya Airways support bot (prototype)
+# Hermes - Kenya Airways support bot (prototype)
+
+[![CI](https://github.com/B1t-Master/hermes/actions/workflows/ci.yml/badge.svg)](https://github.com/B1t-Master/hermes/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/B1t-Master/hermes/badge.svg?branch=dev)](https://coveralls.io/github/B1t-Master/hermes?branch=dev)
 
 Hermes is a RAG-based passenger support assistant for Kenya Airways. It answers
 policy, baggage, check-in, flight-status and rebooking questions, streams replies
@@ -7,6 +10,15 @@ dashboard, and supports an in-chat booking → M-Pesa payment → e-ticket flow.
 
 This is a prototype: the flight data is simulated and the operational systems are
 mocked. See [Assumptions](#assumptions).
+
+## Demo
+
+
+
+https://github.com/user-attachments/assets/10d35a8f-dc68-41db-9a2d-26796484e228
+
+
+
 
 ## Architecture
 
