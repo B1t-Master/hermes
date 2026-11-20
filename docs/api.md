@@ -9,9 +9,7 @@ backend is running.
 | Context | Base URL |
 |---|---|
 | Local backend | `http://localhost:8000` |
-| Docker frontend | `http://localhost:5173` |
 | Frontend dev proxy | `/api` is rewritten to the backend root |
-| Frontend container proxy | `/api/` is proxied to `http://backend:8000/` |
 
 - Request and response bodies are JSON unless noted (file uploads use
   `multipart/form-data`).

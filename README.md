@@ -91,29 +91,6 @@ confirmation.
 
 ## Run locally
 
-### Docker (recommended)
-
-```bash
-cp .env.example .env          # set GROQ_API_KEY (or DEEPSEEK_API_KEY)
-docker compose up --build -d
-```
-
-Open:
-
-- Web app: <http://localhost:5173>
-- API docs (Swagger UI): <http://localhost:8000/docs>
-
-Compose starts PostgreSQL 16 + pgvector, ingests the knowledge base once, then
-starts the API and frontend. The first startup downloads the CPU models and can
-take several minutes:
-
-```bash
-docker compose logs -f kb-init
-docker compose logs -f backend
-```
-
-### Without Docker
-
 Prerequisites: Python 3.11, Node 18+, PostgreSQL 16 with the `pgvector`
 extension, and an LLM API key.
 
