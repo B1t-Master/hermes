@@ -48,3 +48,7 @@ session-*.md
 # IDE
 .idea/
 .vscode/
+# coverage artifacts
+.coverage
+coverage.xml
+htmlcov/
