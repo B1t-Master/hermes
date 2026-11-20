@@ -22,7 +22,7 @@ import httpx
 from websockets.asyncio.client import connect
 
 # Repo root on sys.path so `app.*` imports work from anywhere.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from app.config import settings
 
 BASE = os.environ.get("E2E_BASE", "http://localhost:8000")
