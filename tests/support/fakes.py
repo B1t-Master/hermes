@@ -11,11 +11,29 @@ instances. It covers the surface the API routes actually use:
 
 import uuid
 
-from sqlalchemy import Delete, Insert, Update
+from sqlalchemy import Delete, Update
 from sqlalchemy.sql.selectable import Select
 from sqlalchemy.sql.elements import BooleanClauseList
 from sqlalchemy.sql.expression import BinaryExpression
-from sqlalchemy.sql.operators import eq as _eq_op
+from sqlalchemy.sql.operators import eq as _eq_op, is_not as _is_not_op, ne as _ne_op
+
+# Filled lazily so the fake does not import app.models eagerly.
+_model_registry = []
+
+# Sentinel for ``column.is_not(None)`` criteria.
+_NOT_NONE = object()
+
+# Sentinel for "no value could be computed" in UPDATE set-clauses.
+_SKIP = object()
+
+
+class _NotEqual:
+    """Sentinel wrapper for ``column != literal`` criteria."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value):
+        self.value = value
 
 
 class FakeResult:
@@ -30,6 +48,11 @@ class FakeResult:
 
     def first(self):
         return self._rows[0] if self._rows else None
+
+    def scalar_one(self):
+        if not self._rows:
+            raise IndexError("no rows")
+        return self._rows[0]
 
     def all(self):
         return list(self._rows)
@@ -49,6 +72,11 @@ class FakeDB:
     simple ``column == literal`` criterion in the where clause. Criteria that
     cannot be evaluated (e.g. column-to-column comparisons) match nothing,
     except when there is no where clause at all (then everything matches).
+
+    Also supports the bits the dashboard routes use: ``select(Model.col)``
+    (returns attribute values), ``update(...).values(...).returning(Model.id)``
+    (mutates matching rows, returns their ids) and ``select(func.count())``
+    (returns the match count).
     """
 
     def __init__(self, store=None):
@@ -72,15 +100,23 @@ class FakeDB:
         out = {}
 
         def add_binary(node):
-            if not isinstance(node, BinaryExpression) or node.operator is not _eq_op:
+            if not isinstance(node, BinaryExpression):
                 return False
             name = getattr(node.left, "key", None)
             right = node.right
             if name is None:
                 return False
-            value = getattr(right, "value", None)
-            if getattr(right, "is_literal", False) or value is not None:
-                out[name] = value
+            if node.operator is _eq_op:
+                value = getattr(right, "value", None)
+                if getattr(right, "is_literal", False) or value is not None:
+                    out[name] = value
+                    return True
+                return False
+            if node.operator in (_ne_op, _is_not_op) and getattr(right, "value", None) is None:
+                out[name] = _NOT_NONE
+                return True
+            if node.operator is _ne_op:
+                out[name] = _NotEqual(getattr(right, "value", None))
                 return True
             return False
 
@@ -99,30 +135,102 @@ class FakeDB:
         walk(whereclause)
         return out
 
-    # -- session surface ---------------------------------------------------
-    async def execute(self, stmt):
-        if isinstance(stmt, (Delete, Update, Insert)):
-            self.deleted.append(stmt)
-            return FakeResult([])
-        entity = self._entity(stmt)
+    def _rows_for(self, entity, criteria):
         rows = list(self.store.get(entity, [])) + [
-            o for o in self.added if isinstance(o, entity)
+            o for o in self.added if entity is not None and isinstance(o, entity)
         ]
         if entity is None:
-            rows = []
-        criteria = self._criteria(getattr(stmt, "whereclause", None))
+            return []
         if criteria:
             if criteria.pop("__impossible__", False):
-                rows = []
-            else:
-                rows = [
-                    row for row in rows
-                    if all(getattr(row, key, None) == val for key, val in criteria.items())
-                ]
-        return FakeResult(rows)
+                return []
+            return [
+                row for row in rows
+                if all(
+                    (getattr(row, key, None) is not None)
+                    if val is _NOT_NONE
+                    else (getattr(row, key, None) != val.value)
+                    if isinstance(val, _NotEqual)
+                    else (getattr(row, key, None) == val)
+                    for key, val in criteria.items()
+                )
+            ]
+        return rows
+
+    @staticmethod
+    def _update_target(stmt):
+        table = getattr(stmt, "table", None)
+        if table is None:
+            return None
+        return next(
+            (
+                cls
+                for cls in _model_registry
+                if getattr(cls, "__table__", None) is not None
+                and cls.__table__.name == table.name
+            ),
+            None,
+        )
+
+    # -- session surface ---------------------------------------------------
+    async def execute(self, stmt):
+        if isinstance(stmt, Delete):
+            self.deleted.append(stmt)
+            return FakeResult([])
+        if isinstance(stmt, Update):
+            entity = self._update_target(stmt)
+            matches = self._rows_for(entity, self._criteria(stmt.whereclause))
+            if matches:
+                set_values = getattr(stmt, "_values", None) or {}
+                from sqlalchemy.sql.expression import BindParameter
+                from sqlalchemy.sql.expression import BinaryExpression as _BinExpr
+
+                for row in matches:
+                    for column, value in set_values.items():
+                        applied = _SKIP
+                        if isinstance(value, BindParameter):
+                            applied = value.value
+                        elif isinstance(value, _BinExpr):
+                            # In-place arithmetic like turn_count + 1.
+                            left_key = getattr(value.left, "key", None)
+                            step = getattr(value.right, "value", None)
+                            if left_key and step is not None and hasattr(row, left_key):
+                                applied = (getattr(row, left_key) or 0) + step
+                        if applied is not _SKIP and hasattr(row, column.key):
+                            setattr(row, column.key, applied)
+            return FakeResult([row.id for row in matches])
+        descs = list(getattr(stmt, "column_descriptions", None) or [])
+        if not descs:
+            return FakeResult([])
+        entity = self._entity(stmt)
+        rows = self._rows_for(entity, self._criteria(stmt.whereclause))
+
+        def value_for(row, desc):
+            # select(Model) -> the instance; select(Model.col) -> the value.
+            if desc.get("entity") is not None and desc.get("type") is desc["entity"]:
+                return row
+            name = desc.get("name")
+            if name is None:
+                return None
+            return getattr(row, name, None)
+
+        if len(descs) == 1:
+            desc = descs[0]
+            name = str(desc.get("name") or "")
+            if name.startswith("count"):
+                # Aggregates (func.count): the fake reports the match count.
+                return FakeResult([len(rows)])
+            return FakeResult([value_for(row, desc) for row in rows])
+        return FakeResult([tuple(value_for(row, d) for d in descs) for row in rows])
 
     def add(self, obj):
         self.added.append(obj)
+
+    async def flush(self):
+        self._apply_defaults_on_flush = True
+
+    async def rollback(self):
+        return None
 
     async def commit(self):
         self.commits += 1
@@ -134,6 +242,21 @@ class FakeDB:
 
     @staticmethod
     def _apply_defaults(obj):
+        table = getattr(type(obj), "__table__", None)
+        if table is not None:
+            for column in table.columns:
+                if getattr(obj, column.key, None) is not None:
+                    continue
+                default = getattr(column, "default", None)
+                if default is None:
+                    continue
+                try:
+                    if default.is_scalar:
+                        setattr(obj, column.key, default.arg)
+                    elif default.is_callable:
+                        setattr(obj, column.key, default.arg(None))
+                except Exception:
+                    continue
         if getattr(obj, "id", None) is None and hasattr(obj, "id"):
             obj.id = uuid.uuid4()
         if getattr(obj, "created_at", None) is None and hasattr(obj, "created_at"):
@@ -144,6 +267,8 @@ class FakeDB:
     def register(self, *objects):
         for obj in objects:
             self.store.setdefault(type(obj), []).append(obj)
+            if type(obj) not in _model_registry:
+                _model_registry.append(type(obj))
 
 
 class FakeHub:
