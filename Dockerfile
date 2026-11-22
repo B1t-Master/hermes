@@ -11,10 +11,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Slow networks can stall on large wheels (notably the CPU-only torch build).
+RUN pip install --no-cache-dir --timeout 120 --retries 10 -r requirements.txt
 # The legacy RAG stack requires NumPy 1.x; newer PyArrow wheels require 2.x.
-RUN pip install --no-cache-dir pyarrow==19.0.1
-RUN pip install --no-cache-dir datasets==3.2.0 && pip check
+RUN pip install --no-cache-dir --timeout 120 --retries 10 pyarrow==19.0.1
+RUN pip install --no-cache-dir --timeout 120 --retries 10 datasets==3.2.0 && pip check
 
 RUN useradd --create-home --uid 10001 hermes
 COPY --chown=hermes:hermes app ./app
