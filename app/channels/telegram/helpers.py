@@ -9,6 +9,15 @@ TELEGRAM_MAX_CHARS = 4096
 # Leave headroom under the hard 4096 limit for the HTML we inject (<b></b>).
 CHUNK_LIMIT = 3900
 
+# httpx puts the full request URL in HTTPStatusError messages and tracebacks.
+# Telegram URLs contain the bot token, so scrub it before anything is logged.
+_BOT_TOKEN_RE = re.compile(r"/bot\d+:[A-Za-z0-9_-]{20,}")
+
+
+def redact_secrets(text: str) -> str:
+    """Replace any Telegram bot token in ``text`` with a safe placeholder."""
+    return _BOT_TOKEN_RE.sub("/bot<redacted>", text)
+
 WELCOME = (
     "Hi! I'm the Kenya Airways assistant. Ask me about baggage, rebooking, "
     "refunds, check-in and more — or send /help. If I can't help, I can pass "

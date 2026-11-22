@@ -44,6 +44,7 @@ from .helpers import (
     Incoming,
     chunk_text,
     parse_incoming,
+    redact_secrets,
     to_telegram_html,
 )
 from .mapping import _get_or_create_conversation as _get_or_create_conversation
@@ -65,5 +66,6 @@ __all__ = [
     "chunk_text",
     "get_telegram_channel",
     "parse_incoming",
+    "redact_secrets",
     "to_telegram_html",
 ]

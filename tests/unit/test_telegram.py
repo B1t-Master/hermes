@@ -11,6 +11,7 @@ from app.channels.telegram import (
     _HubSink,
     chunk_text,
     parse_incoming,
+    redact_secrets,
     to_telegram_html,
 )
 
@@ -50,6 +51,20 @@ class ParseIncomingTest(unittest.TestCase):
     def test_edited_message_is_ignored(self):
         update = {"edited_message": {"chat": {"id": 1}, "text": "hi"}}
         self.assertIsNone(parse_incoming(update))
+
+
+class RedactSecretsTest(unittest.TestCase):
+    def test_strips_bot_token_from_a_status_error_url(self):
+        text = (
+            "Server error '502 Bad Gateway' for url "
+            "'https://api.telegram.org/bot8715053554:AAE6eGWVCALXNC1v5P8XVe3lA9xipTwfbAg/getUpdates'"
+        )
+        redacted = redact_secrets(text)
+        self.assertNotIn("AAE6eGWVCALXNC1v5P8XVe3lA9xipTwfbAg", redacted)
+        self.assertIn("/bot<redacted>/getUpdates", redacted)
+
+    def test_leaves_other_text_alone(self):
+        self.assertEqual(redact_secrets("HTTP 502"), "HTTP 502")
 
 
 class ChunkTextTest(unittest.TestCase):
@@ -136,6 +151,13 @@ class TelegramAPITest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TelegramError):
             await api.send_message(1, "x")
 
+    async def test_reset_replaces_the_owned_client(self):
+        api = TelegramAPI("TESTTOKEN", base_url="https://api.telegram.test")
+        original = api._client
+        await api.reset()
+        self.assertIsNot(api._client, original)
+        await api.close()
+
 
 class _FakeAPI:
     def __init__(self):
@@ -157,6 +179,9 @@ class _FakeAPI:
 
     async def delete_webhook(self):
         return {}
+
+    async def reset(self):
+        pass
 
     async def close(self):
         pass
