@@ -13,13 +13,23 @@ class Base(DeclarativeBase):
 
 
 def _engine_kwargs() -> dict:
-    """Engine options for Postgres (asyncpg)."""
+    """Engine options for Postgres (asyncpg).
+
+    ``timeout`` bounds the connect/authentication handshake and
+    ``command_timeout`` bounds any single statement. Without them asyncpg
+    waits on the OS default, so an unreachable database makes requests hang
+    until the client gives up rather than returning a quick, debuggable error.
+    """
     return {
         "echo": settings.sql_echo,
         "pool_pre_ping": settings.db_pool_pre_ping,
         "pool_size": settings.db_pool_size,
         "max_overflow": settings.db_max_overflow,
         "pool_recycle": settings.db_pool_recycle,
+        "connect_args": {
+            "timeout": settings.db_connect_timeout_seconds,
+            "command_timeout": settings.db_command_timeout_seconds,
+        },
     }
 
 

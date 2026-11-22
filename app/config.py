@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     db_max_overflow: int = 10
     db_pool_recycle: int = 1800
     db_pool_pre_ping: bool = True
+    # Bound DB waits so an unreachable database fails fast with a clear 500
+    # instead of hanging until the browser aborts ("Failed to fetch").
+    db_connect_timeout_seconds: float = 10.0
+    db_command_timeout_seconds: float = 30.0
 
     # --- Knowledge-base cache ---
     kb_cache_ttl_seconds: float = 300.0
