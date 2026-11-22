@@ -215,6 +215,7 @@ source (PDF / DOCX / HTML / text)
 - If the embedding stack is unavailable, the retriever falls back to keyword
   search instead of failing the turn.
 
+The Docker Compose `kb-init` service runs ingestion once before the API starts.
 The backend warms the embedding model and store connection at startup so
 the first passenger turn is not delayed by model loading.
 
@@ -353,7 +354,14 @@ See [`.env.example`](../.env.example) for the full list and defaults.
 
 ## 11. Deployment and operations
 
-The prototype runs as local processes:
+Docker Compose is the recommended way to run the full stack:
+
+1. **db** — PostgreSQL 16 with pgvector.
+2. **kb-init** — one-shot ingestion; exits 0 even if a remote source fails.
+3. **backend** — FastAPI; waits for a healthy database and completed ingestion.
+4. **frontend** — built React app served by Nginx.
+
+For local development without Docker, the equivalent processes are:
 
 1. **PostgreSQL 16 + pgvector** — the knowledge base and app tables.
 2. **ingest** — `python -m ingest.run --embed` populates the corpus (rerun with
@@ -362,12 +370,14 @@ The prototype runs as local processes:
 4. **frontend** — Vite dev server (`npm run dev`) proxying `/api` and `/ws`
    to the backend.
 
-Persistent state lives outside the app: the PostgreSQL database, the flight
-SQLite database, the email outbox, the Hugging Face model cache, and knowledge
-source uploads in `data_sources/`.
+Persistent named volumes hold PostgreSQL data, the flight SQLite database, the
+email outbox, the Hugging Face model cache, and knowledge-source uploads when
+running under Compose. Without Docker, that state lives outside the app in the
+host filesystem/PostgreSQL. Bundled source documents are refreshed from the
+image on each container start; uploaded files stay in the volume.
 
-Health check: `GET /health`. Change the default credentials before exposing
-the app.
+Health check: `GET /health`. Keep `.env` secrets out of image builds and change
+the default credentials before exposing the app.
 
 ## 12. Testing and evaluation
 
