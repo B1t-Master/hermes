@@ -8,7 +8,16 @@
 #      such as $backend and $host untouched for request-time DNS resolution.
 set -eu
 
-RESOLVERS=$(awk '$1 == "nameserver" { printf " %s", $2 }' /etc/resolv.conf)
+RESOLVERS=""
+for ns in $(awk '$1 == "nameserver" { print $2 }' /etc/resolv.conf); do
+    # Railway uses a bare IPv6 nameserver (fd12::10); nginx requires brackets
+    # around IPv6 literals or it fails with "invalid port in resolver".
+    ns="${ns%%%*}"          # drop any zone index, e.g. %eth0
+    case "$ns" in
+        *:*) ns="[$ns]" ;;  # IPv6 -> [fd12::10]; IPv4 passes through unchanged
+    esac
+    RESOLVERS="$RESOLVERS $ns"
+done
 if [ -z "$RESOLVERS" ]; then
     # Docker's embedded DNS; Railway always injects at least one nameserver.
     RESOLVERS=" 127.0.0.11"
