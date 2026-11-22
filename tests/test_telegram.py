@@ -1,7 +1,9 @@
 import unittest
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
+from app.channels import telegram as telegram_module
 from app.channels.telegram import (
     HELP,
     WELCOME,
@@ -11,6 +13,7 @@ from app.channels.telegram import (
     _HubSink,
     chunk_text,
     parse_incoming,
+    redact_secrets,
     to_telegram_html,
 )
 
@@ -50,6 +53,20 @@ class ParseIncomingTest(unittest.TestCase):
     def test_edited_message_is_ignored(self):
         update = {"edited_message": {"chat": {"id": 1}, "text": "hi"}}
         self.assertIsNone(parse_incoming(update))
+
+
+class RedactSecretsTest(unittest.TestCase):
+    def test_strips_bot_token_from_a_status_error_url(self):
+        text = (
+            "Server error '502 Bad Gateway' for url "
+            "'https://api.telegram.org/bot8715053554:AAE6eGWVCALXNC1v5P8XVe3lA9xipTwfbAg/getUpdates'"
+        )
+        redacted = redact_secrets(text)
+        self.assertNotIn("AAE6eGWVCALXNC1v5P8XVe3lA9xipTwfbAg", redacted)
+        self.assertIn("/bot<redacted>/getUpdates", redacted)
+
+    def test_leaves_other_text_alone(self):
+        self.assertEqual(redact_secrets("HTTP 502"), "HTTP 502")
 
 
 class ChunkTextTest(unittest.TestCase):
@@ -136,6 +153,13 @@ class TelegramAPITest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TelegramError):
             await api.send_message(1, "x")
 
+    async def test_reset_replaces_the_owned_client(self):
+        api = TelegramAPI("TESTTOKEN", base_url="https://api.telegram.test")
+        original = api._client
+        await api.reset()
+        self.assertIsNot(api._client, original)
+        await api.close()
+
 
 class _FakeAPI:
     def __init__(self):
@@ -157,6 +181,9 @@ class _FakeAPI:
 
     async def delete_webhook(self):
         return {}
+
+    async def reset(self):
+        pass
 
     async def close(self):
         pass
@@ -183,6 +210,85 @@ class TelegramChannelCommandTest(unittest.IsolatedAsyncioTestCase):
         await channel._handle_update({"message": {"chat": {"id": 9}, "photo": []}})
         self.assertEqual(api.sent, [])
         self.assertEqual(api.actions, [])
+
+
+class PollLoopTest(unittest.IsolatedAsyncioTestCase):
+    """Exercise retry backoff and the stall watchdog without a network."""
+
+    async def test_502_errors_back_off_and_never_log_the_token(self):
+        token = "8715053554:AAE6eGWVCALXNC1v5P8XVe3lA9xipTwfbAg"
+        request = httpx.Request("POST", f"https://api.telegram.org/bot{token}/getUpdates")
+        response = httpx.Response(502, request=request, text="Bad Gateway")
+        api = _FakeAPI()
+        api.reset = AsyncMock()
+        sleeps: list[float] = []
+        chan = TelegramChannel(api, poll_timeout=1)
+
+        async def fake_sleep(seconds):
+            sleeps.append(seconds)
+            if len(sleeps) >= 3:
+                chan._closed = True
+
+        async def get_updates(offset, timeout=0):
+            raise httpx.HTTPStatusError(
+                f"Server error 502 for url 'https://api.telegram.org/bot{token}/getUpdates'",
+                request=request,
+                response=response,
+            )
+
+        api.get_updates = get_updates
+        with (
+            patch("asyncio.sleep", new=fake_sleep),
+            patch.object(telegram_module.random, "random", return_value=0.0),
+            self.assertLogs(telegram_module.logger, level="WARNING") as logs,
+        ):
+            await chan._poll_loop()
+        self.assertEqual(sleeps, [1.5, 3.0, 6.0])
+        output = "\n".join(logs.output)
+        self.assertNotIn(token, output)
+        self.assertIn("/bot<redacted>", output)
+        self.assertIn("HTTP 502", output)
+
+    async def test_watchdog_resets_client_after_a_long_stall(self):
+        api = _FakeAPI()
+        api.reset = AsyncMock()
+        chan = TelegramChannel(api, poll_timeout=1)
+        clock = {"t": 0.0}
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds):
+            sleeps.append(seconds)
+            clock["t"] += seconds + 200  # jump past the watchdog window
+            if len(sleeps) >= 2:
+                chan._closed = True
+
+        async def get_updates(offset, timeout=0):
+            raise RuntimeError("still down")
+
+        api.get_updates = get_updates
+        with (
+            patch.object(TelegramChannel, "_now", side_effect=lambda: clock["t"]),
+            patch("asyncio.sleep", new=fake_sleep),
+            patch.object(telegram_module.random, "random", return_value=0.0),
+        ):
+            await chan._poll_loop()
+        api.reset.assert_awaited_once()
+
+
+class SingletonTest(unittest.TestCase):
+    def test_poll_timeout_is_clamped_to_a_proxy_safe_value(self):
+        previous = telegram_module._channel
+        telegram_module._channel = None
+        try:
+            with (
+                patch.object(telegram_module.settings, "telegram_poll_timeout", 50),
+                patch.object(telegram_module.settings, "telegram_bot_token", "TESTTOKEN"),
+            ):
+                channel = telegram_module.get_telegram_channel()
+            self.assertEqual(channel._poll_timeout, 25)
+            self.assertEqual(channel._api._timeout, 40.0)
+        finally:
+            telegram_module._channel = previous
 
 
 class HubSinkTest(unittest.IsolatedAsyncioTestCase):

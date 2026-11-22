@@ -27,7 +27,9 @@ nothing is delivered twice.
 
 import asyncio
 import logging
+import random
 import re
+import traceback
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -63,6 +65,42 @@ ESCALATION_NOTICE = (
 CLOSED_NOTICE = "This conversation is closed. Send /start to begin a new one."
 ERROR_NOTICE = "Sorry, something went wrong on my side. Please try again."
 AGENT_PREFIX = "👤 Agent: "
+
+_BASE_RETRY_DELAY = 1.5
+_MAX_RETRY_DELAY = 30.0
+_WATCHDOG_AFTER = 120.0  # no successful getUpdates for 2 minutes => recycle the client
+_MAX_POLL_TIMEOUT = 25  # longer long-polls get cut by some egress proxies
+
+# httpx puts the full request URL in HTTPStatusError messages and tracebacks.
+# Telegram URLs contain the bot token, so scrub it before anything is logged.
+_BOT_TOKEN_RE = re.compile(r"/bot\d+:[A-Za-z0-9_-]{20,}")
+
+
+def redact_secrets(text: str) -> str:
+    """Replace any Telegram bot token in ``text`` with a safe placeholder."""
+    return _BOT_TOKEN_RE.sub("/bot<redacted>", text)
+
+
+def _log_api_failure(action: str, exc: BaseException, delay: float | None = None) -> None:
+    """Log a transient Bot API failure without the token-bearing request URL."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        detail = f"HTTP {exc.response.status_code}"
+    else:
+        detail = type(exc).__name__
+    message = redact_secrets(str(exc))
+    if message:
+        detail = f"{detail}: {message}"
+    suffix = f"; retrying in {delay:.1f}s" if delay is not None else ""
+    logger.warning("Telegram %s failed (%s)%s", action, detail, suffix)
+
+
+def _log_exception(message: str, *args: object) -> None:
+    """Log an unexpected error with a redacted traceback."""
+    logger.error(
+        "%s\n%s",
+        redact_secrets(message % args if args else message),
+        redact_secrets(traceback.format_exc()),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -158,11 +196,15 @@ class TelegramAPI:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._base = f"{base_url.rstrip('/')}/bot{token}"
-        self._client = client or httpx.AsyncClient(
-            timeout=timeout,
+        self._timeout = timeout
+        self._client = client or self._new_client()
+        self._owns_client = client is None
+
+    def _new_client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            timeout=self._timeout,
             limits=httpx.Limits(max_connections=1, max_keepalive_connections=0),
         )
-        self._owns_client = client is None
 
     async def _call(self, method: str, payload: dict) -> object:
         response = await self._client.post(f"{self._base}/{method}", json=payload)
@@ -192,6 +234,17 @@ class TelegramAPI:
 
     async def delete_webhook(self) -> object:
         return await self._call("deleteWebhook", {"drop_pending_updates": False})
+
+    async def reset(self) -> None:
+        """Drop the current HTTP connection and start a fresh client.
+
+        A long-poll socket can hang without ever returning headers (NAT/
+        proxy timeout). Recycling the client forces new TCP/TLS connections
+        the next time we poll.
+        """
+        if self._owns_client:
+            await self._client.aclose()
+            self._client = self._new_client()
 
     async def close(self) -> None:
         if self._owns_client:
@@ -281,6 +334,7 @@ class TelegramChannel:
         self._task: asyncio.Task | None = None
         self._sinks: dict[uuid.UUID, _HubSink] = {}
         self._closed = False
+        self._last_success = 0.0
 
     # -- lifecycle -------------------------------------------------------
 
@@ -288,13 +342,14 @@ class TelegramChannel:
         self._closed = False
         try:
             await self._api.delete_webhook()
-        except Exception:
-            logger.warning("Telegram: deleteWebhook failed; polling may conflict", exc_info=True)
+        except Exception as exc:
+            _log_api_failure("deleteWebhook", exc)
+            logger.warning("Telegram polling may conflict with a stale webhook")
         try:
             me = await self._api.get_me()
             logger.info("Telegram channel ready as @%s", (me or {}).get("username"))
-        except Exception:
-            logger.warning("Telegram: getMe failed", exc_info=True)
+        except Exception as exc:
+            _log_api_failure("getMe", exc)
         await self._rejoin_rooms()
         self._task = asyncio.create_task(self._poll_loop(), name="telegram-poll")
         logger.info("Telegram channel started (long polling)")
@@ -308,7 +363,7 @@ class TelegramChannel:
             except asyncio.CancelledError:
                 pass
             except Exception:
-                logger.debug("Telegram poll loop raised on shutdown", exc_info=True)
+                _log_exception("Telegram poll loop raised on shutdown")
             self._task = None
         for conversation_id, sink in list(self._sinks.items()):
             conversation_hub.leave(conversation_id, sink)
@@ -338,7 +393,7 @@ class TelegramChannel:
                     )
                 ).all()
         except Exception:
-            logger.exception("Telegram: failed to load open conversations for rejoin")
+            _log_exception("Telegram: failed to load open conversations for rejoin")
             return
         for conversation_id, chat_id in rows:
             if not chat_id:
@@ -346,10 +401,32 @@ class TelegramChannel:
             self._join_room(conversation_id, int(chat_id))
         logger.info("Telegram rejoined %d open conversation(s)", len(rows))
 
+    def _now(self) -> float:
+        return asyncio.get_running_loop().time()
+
+    def _retry_delay(self, failures: int) -> float:
+        """Capped exponential backoff with 0-25% jitter."""
+        base = min(_MAX_RETRY_DELAY, _BASE_RETRY_DELAY * 2 ** (failures - 1))
+        return min(_MAX_RETRY_DELAY, base * (1 + random.random() * 0.25))
+
     async def _poll_loop(self) -> None:
         logger.info("Poll loop starting")
         offset = 0
+        failures = 0
+        self._last_success = self._now()
         while not self._closed:
+            # A hung long-poll can leave the socket open with no data forever.
+            # If we have not completed a single poll recently, recycle the
+            # HTTP client so the next attempt uses a fresh connection.
+            stalled_for = self._now() - self._last_success
+            if stalled_for >= _WATCHDOG_AFTER:
+                logger.warning(
+                    "Telegram polling stalled for %.0fs; resetting HTTP client",
+                    stalled_for,
+                )
+                await self._api.reset()
+                self._last_success = self._now()
+
             logger.debug("Polling for updates (offset=%d)", offset)
             try:
                 updates = await self._api.get_updates(offset, timeout=self._poll_timeout)
@@ -364,13 +441,20 @@ class TelegramChannel:
                     logger.warning("Telegram 409 Conflict; waiting 30s for stale connection to expire")
                     await asyncio.sleep(30)
                     continue
-                logger.exception("Telegram getUpdates failed; retrying in 3s")
-                await asyncio.sleep(3)
+                failures += 1
+                delay = self._retry_delay(failures)
+                _log_api_failure("getUpdates", exc, delay)
+                await asyncio.sleep(delay)
                 continue
-            except Exception:
-                logger.exception("Telegram getUpdates failed; retrying in 3s")
-                await asyncio.sleep(3)
+            except Exception as exc:
+                failures += 1
+                delay = self._retry_delay(failures)
+                _log_api_failure("getUpdates", exc, delay)
+                await asyncio.sleep(delay)
                 continue
+
+            failures = 0
+            self._last_success = self._now()
             for update in updates or []:
                 update_id = update.get("update_id")
                 if isinstance(update_id, int):
@@ -378,7 +462,7 @@ class TelegramChannel:
                 try:
                     await self._handle_update(update)
                 except Exception:
-                    logger.exception("Telegram update failed: %r", update)
+                    _log_exception("Telegram update failed: %r", update)
 
     async def _handle_update(self, update: dict) -> None:
         incoming = parse_incoming(update)
@@ -406,7 +490,7 @@ class TelegramChannel:
             await self._send_text(chat_id, CLOSED_NOTICE)
             return
         except Exception:
-            logger.exception("Telegram turn failed for conversation=%s", conversation_id)
+            _log_exception("Telegram turn failed for conversation=%s", conversation_id)
             await self._send_text(chat_id, ERROR_NOTICE)
             return
 
@@ -446,8 +530,8 @@ class TelegramChannel:
     async def _send_typing(self, chat_id: int) -> None:
         try:
             await self._api.send_chat_action(chat_id, "typing")
-        except Exception:
-            logger.debug("Telegram sendChatAction failed", exc_info=True)
+        except Exception as exc:
+            logger.debug("Telegram sendChatAction failed: %s", redact_secrets(str(exc)))
 
     async def _send_text(self, chat_id: int, text: str) -> None:
         for chunk in chunk_text(text):
@@ -469,10 +553,17 @@ _channel: TelegramChannel | None = None
 def get_telegram_channel() -> TelegramChannel:
     global _channel
     if _channel is None:
+        poll_timeout = min(settings.telegram_poll_timeout, _MAX_POLL_TIMEOUT)
+        if poll_timeout < settings.telegram_poll_timeout:
+            logger.warning(
+                "TELEGRAM_POLL_TIMEOUT=%s exceeds %ss; clamping to avoid proxy cutoffs",
+                settings.telegram_poll_timeout,
+                _MAX_POLL_TIMEOUT,
+            )
         api = TelegramAPI(
             settings.telegram_bot_token,
             base_url=settings.telegram_api_base,
-            timeout=settings.telegram_poll_timeout + 15.0,
+            timeout=poll_timeout + 15.0,
         )
-        _channel = TelegramChannel(api, poll_timeout=settings.telegram_poll_timeout)
+        _channel = TelegramChannel(api, poll_timeout=poll_timeout)
     return _channel
