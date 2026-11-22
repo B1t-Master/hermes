@@ -20,11 +20,15 @@ class TelegramAPI:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._base = f"{base_url.rstrip('/')}/bot{token}"
-        self._client = client or httpx.AsyncClient(
-            timeout=timeout,
+        self._timeout = timeout
+        self._client = client or self._new_client()
+        self._owns_client = client is None
+
+    def _new_client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            timeout=self._timeout,
             limits=httpx.Limits(max_connections=1, max_keepalive_connections=0),
         )
-        self._owns_client = client is None
 
     async def _call(self, method: str, payload: dict) -> object:
         response = await self._client.post(f"{self._base}/{method}", json=payload)
@@ -54,6 +58,17 @@ class TelegramAPI:
 
     async def delete_webhook(self) -> object:
         return await self._call("deleteWebhook", {"drop_pending_updates": False})
+
+    async def reset(self) -> None:
+        """Drop the current HTTP connection and start a fresh client.
+
+        A long-poll socket can hang without ever returning headers (NAT/
+        proxy timeout). Recycling the client forces new TCP/TLS connections
+        the next time we poll.
+        """
+        if self._owns_client:
+            await self._client.aclose()
+            self._client = self._new_client()
 
     async def close(self) -> None:
         if self._owns_client:
